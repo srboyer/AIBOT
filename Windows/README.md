@@ -46,6 +46,9 @@ chat_watcher.py              <- generic runner, drives everything below
     +-- chat_backend.py       <- interface every backend implements
     +-- claude_desktop_backend.py   <- Claude Desktop detection logic
     +-- chatgpt_desktop_backend.py  <- ChatGPT Desktop detection logic
+    +-- claude_code_vscode_backend.py  <- Claude Code (VS Code) detection logic
+    |       +-- claude_code_status_hook.py    <- writes status (Claude Code hook)
+    |       +-- claude_code_status_shared.py  <- shared status-file path constant
     |
     +-- claude_light_tracker.py     <- State enum, StateTracker, Light classes
                                         (ConsoleLight, ArduinoLight, BLELight, GPIOLight)
@@ -121,6 +124,74 @@ different, task-based UI that this does not target).
   images, map widgets, cards) injects large amounts of irrelevant noise
   into the UI tree — but since detection never reads response text or
   scans the message list for this backend, none of that noise matters.
+
+### claude_code_vscode_backend.py — Claude Code (in VS Code) detection
+
+Claude Code is a CLI, not a windowed app -- there's no button toggle or
+input-box placeholder for UI Automation to watch (a VS Code terminal is one
+opaque scrolling text buffer, not structured elements). So this backend does
+**zero UI automation**. Instead it rides Claude Code's own hook system:
+
+- `claude_code_status_hook.py` is registered in `~/.claude/settings.json`
+  against `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`,
+  `PostToolUse`, `Notification`, and `Stop`. Claude Code invokes it on every
+  one of those events, feeding a JSON payload on stdin; it overwrites one
+  small status file (`claude_code_status_shared.STATUS_FILE`,
+  `~/.claude/claude_code_status.json`) each time.
+- The backend just polls that file for a newer mtime -- no window handle,
+  no reconnect-by-UIA.
+- **"Is this VS Code?"** isn't in the hook payload itself, so the hook script
+  reads it from the process environment instead (hook commands inherit
+  whatever Claude Code's own parent process set): `CLAUDE_CODE_ENTRYPOINT=
+  claude-vscode` for the native VS Code extension (chat panel), or
+  `TERM_PROGRAM=vscode` for `claude` typed directly into a VS Code
+  integrated terminal tab. Both were confirmed by inspecting a real running
+  session's environment and cross-checking the literal strings baked into
+  the installed `claude.exe`.
+- **Setup required**: this backend does nothing until those hooks exist.
+  Until then, `try_connect()` just never succeeds -- same as any other
+  backend whose target app isn't open, not an error.
+- **State mapping**: `UserPromptSubmit` -> ANALYZING, `PreToolUse` ->
+  THINKING, `PostToolUse` -> back to ANALYZING, `Notification` -> QUESTION
+  (except `notification_type: "idle_prompt"`, see below), `Stop` -> DONE.
+  `SessionEnd` isn't a display state -- it makes `poll()` raise, so the
+  outer loop treats it as "app closed" and goes back to waiting for the
+  next session.
+- **Notification is two different events sharing one hook**: its payload's
+  `notification_type` field is `"idle_prompt"` ("Claude is waiting for your
+  input") after ~60s of no activity -- not a real question, just a nudge --
+  versus something like `"agent_needs_input"` for an actual tool-permission
+  prompt. These were originally conflated (every `Notification` -> QUESTION),
+  which was a real bug: just going idle for a minute turned the light red
+  with nothing actually pending, and it stayed red into the start of the
+  next prompt. Fixed by excluding `idle_prompt` specifically -- any other
+  (including unrecognized/future) `notification_type` still maps to
+  QUESTION, so the failure mode of an unknown type is "safe" (still shows
+  red when it might matter) rather than silently swallowed.
+- **No true THINKING signal**: hooks only fire around tool calls, so
+  THINKING here really means "a tool call is in flight", not extended
+  reasoning in the Claude Desktop sense -- plain reasoning/response text
+  between tool calls reports nothing until the next hook fires.
+- **No dedicated "answered" event**: like `claude_desktop_backend.py`'s own
+  question-hold logic, QUESTION holds until the next `UserPromptSubmit` or
+  `PreToolUse` shows real progress resumed.
+- **Single session only**: the status file holds one session's latest
+  event, last-writer-wins -- two concurrent Claude Code sessions in VS Code
+  (two chat panels, or a panel plus a terminal session) will stomp on each
+  other, the same limitation every other backend here has with multiple
+  windows of the same app.
+- **Interrupted/rejected turns**: Claude Code fires no hook at all for "the
+  user hit Escape" or "the user rejected this tool call" -- confirmed live,
+  by watching a real session's status file stay on `PreToolUse` forever
+  after a tool rejection with no `Stop` ever following. `PostToolUse` covers
+  most of this (a rejected/errored/cancelled tool call still very likely
+  fires it, snapping the light back to ANALYZING immediately). The one gap
+  it can't cover -- interrupting Claude mid plain-text response with no
+  tool in flight, which leaves zero hook trace whatsoever -- falls back to
+  a `STALE_AFTER_SECONDS` (90s) timeout: no event at all for that long while
+  a turn is presumed busy synthesizes a `finished` event. Deliberately
+  skipped while holding on QUESTION, since sitting on a permission prompt
+  for a while is normal, not stuck.
 
 ### Diagnostic/inspection tools
 

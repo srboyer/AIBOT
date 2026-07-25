@@ -1,5 +1,12 @@
 /*
-  claude_matrix_esp32c3_ble.ino  --  v4
+  claude_matrix_esp32c3_ble.ino  --  v5
+
+  v5: THINKING gets more than one face. Long tool-call sequences used to sit
+  on the same 4-pixel perimeter chase the whole time -- now THINKING rotates
+  through four different animations (chase, Cylon-style scanner, bouncing
+  dot, breathing pulse) every THINKING_ANIM_SWITCH_MS, so a long-running
+  turn doesn't look frozen on one pattern. Purely cosmetic -- no protocol
+  change, ANALYZING/QUESTION/DONE untouched.
 
   v4: THE STABILITY FIX. The 3-second heartbeat in v3.x flooded the ESP32's
   BLE stack and caused disconnects on multiple PC Bluetooth adapters (Intel,
@@ -76,6 +83,15 @@
 // (last state + corner dot); genuine departures still resolve honestly.
 #define LINK_GRACE_MS 30000UL
 
+// THINKING rotates through several animations rather than looping one
+// forever -- this is how long each one gets before handing off to the next.
+#define THINKING_ANIM_SWITCH_MS 4000UL
+
+// Normal display brightness (0-15). THINKING's pulse animation drives
+// intensity down to breathe, so every OTHER draw function re-asserts this
+// explicitly rather than assuming it was never touched.
+#define NORMAL_INTENSITY 8
+
 MD_MAX72XX mx = MD_MAX72XX(HARDWARE_TYPE, DATA_PIN, CLK_PIN, CS_PIN, MAX_DEVICES);
 
 BLECharacteristic *pRxCharacteristic;
@@ -94,6 +110,18 @@ bool lastConnected = false;  // detects connect/disconnect edges in loop()
 unsigned long lastAnimTime = 0;
 int animFrame = 0;
 bool blinkOn = true;
+
+// Which THINKING animation is currently showing, and when it last rotated.
+// Fixed cyclic order (not random) -- predictable and easy to eyeball-test.
+enum ThinkingAnim {
+  ANIM_CHASE = 0,    // perimeter trail (the original v1-v4 THINKING look)
+  ANIM_SCANNER,      // full-column Cylon-eye sweep
+  ANIM_BOUNCE,       // single dot bouncing across the middle row
+  ANIM_PULSE,        // filled diamond breathing via intensity, not position
+  THINKING_ANIM_COUNT  // sentinel -- must stay last
+};
+int thinkingAnimIndex = 0;
+unsigned long thinkingAnimSwitchedAt = 0;
 
 // "No computer connected" indicator pixel: bottom-right corner, unused by
 // every pattern drawn while disconnected (disconnect forces state to 'D').
@@ -136,6 +164,19 @@ const int perimeterCol[28] = {
   0, 0, 0, 0, 0, 0
 };
 
+// ANIM_PULSE's shape -- stays fixed on screen; the animation is entirely in
+// the intensity breathing (see drawThinkingPulse), not pixel movement.
+const bool pulseDiamond[8][8] = {
+  {0, 0, 0, 1, 1, 0, 0, 0},
+  {0, 0, 1, 1, 1, 1, 0, 0},
+  {0, 1, 1, 1, 1, 1, 1, 0},
+  {1, 1, 1, 1, 1, 1, 1, 1},
+  {1, 1, 1, 1, 1, 1, 1, 1},
+  {0, 1, 1, 1, 1, 1, 1, 0},
+  {0, 0, 1, 1, 1, 1, 0, 0},
+  {0, 0, 0, 1, 1, 0, 0, 0},
+};
+
 // v3.3: the link-dot overlays EVERY pattern while disconnected, applied at
 // the end of each draw. (7,7) is unused by the face, question mark, and
 // thinking dots; the THINKING spinner's trail passes through it, which
@@ -147,6 +188,7 @@ void applyLinkDot() {
 }
 
 void drawFace() {
+  mx.control(MD_MAX72XX::INTENSITY, NORMAL_INTENSITY);  // undo any leftover THINKING-pulse dimming
   mx.clear();
   for (int row = 0; row < 8; row++) {
     for (int col = 0; col < 8; col++) {
@@ -159,6 +201,7 @@ void drawFace() {
 }
 
 void drawQuestionMark() {
+  mx.control(MD_MAX72XX::INTENSITY, NORMAL_INTENSITY);  // undo any leftover THINKING-pulse dimming
   mx.clear();
   for (int row = 0; row < 7; row++) {
     for (int col = 0; col < 8; col++) {
@@ -172,6 +215,7 @@ void drawQuestionMark() {
 }
 
 void drawThinking(int frame) {
+  mx.control(MD_MAX72XX::INTENSITY, NORMAL_INTENSITY);  // undo any leftover THINKING-pulse dimming
   mx.clear();
   const int dotCols[3] = {1, 3, 5};
   const int dotsToShow = frame % 4;
@@ -181,7 +225,12 @@ void drawThinking(int frame) {
   applyLinkDot();
 }
 
-void drawThinkingDeep(int frame) {
+// -- THINKING animations -- rotated through by drawThinkingFrame() below --
+
+// The original v1-v4 THINKING look: a 4-pixel trail chasing around the
+// matrix's outer edge.
+void drawThinkingChase(int frame) {
+  mx.control(MD_MAX72XX::INTENSITY, NORMAL_INTENSITY);
   mx.clear();
   const int trailLength = 4;
   for (int i = 0; i < trailLength; i++) {
@@ -189,6 +238,63 @@ void drawThinkingDeep(int frame) {
     mx.setPoint(perimeterRow[idx], perimeterCol[idx], true);
   }
   applyLinkDot();
+}
+
+// Full column sweeping left-to-right-to-left, "Cylon eye" style. Triangle
+// wave over a 14-frame period: 0,1,2,...,7,6,5,...,1 -- covers columns 0-7
+// and back without a stutter or repeated endpoint frame.
+void drawThinkingScanner(int frame) {
+  mx.control(MD_MAX72XX::INTENSITY, NORMAL_INTENSITY);
+  mx.clear();
+  const int period = 14;
+  int pos = frame % period;
+  int col = (pos < 8) ? pos : period - pos;
+  for (int row = 0; row < 8; row++) {
+    mx.setPoint(row, col, true);
+  }
+  applyLinkDot();
+}
+
+// A single dot bouncing across the middle row, ball-in-a-box style. Same
+// triangle-wave math as the scanner, just one pixel instead of a column.
+void drawThinkingBounce(int frame) {
+  mx.control(MD_MAX72XX::INTENSITY, NORMAL_INTENSITY);
+  mx.clear();
+  const int period = 14;
+  int pos = frame % period;
+  int col = (pos < 8) ? pos : period - pos;
+  mx.setPoint(4, col, true);
+  applyLinkDot();
+}
+
+// A fixed diamond that breathes via display intensity instead of moving --
+// gives the rotation a "calm" beat between the three motion-based ones.
+// Floor of 0 (not off) so it dims to a low glow rather than blinking dark.
+void drawThinkingPulse(int frame) {
+  mx.clear();
+  for (int row = 0; row < 8; row++) {
+    for (int col = 0; col < 8; col++) {
+      if (pulseDiamond[row][col]) {
+        mx.setPoint(row, col, true);
+      }
+    }
+  }
+  const int period = 32;
+  int pos = frame % period;
+  int level = (pos < 16) ? pos : period - pos;  // triangle wave 0..15..0
+  mx.control(MD_MAX72XX::INTENSITY, level);
+  applyLinkDot();
+}
+
+// Dispatches to whichever THINKING animation is currently active. Kept as
+// one switch so loop() doesn't need to know the animation list itself.
+void drawThinkingFrame(int animIndex, int frame) {
+  switch (animIndex) {
+    case ANIM_CHASE:   drawThinkingChase(frame);   break;
+    case ANIM_SCANNER: drawThinkingScanner(frame); break;
+    case ANIM_BOUNCE:  drawThinkingBounce(frame);  break;
+    case ANIM_PULSE:   drawThinkingPulse(frame);   break;
+  }
 }
 
 class ServerCallbacks: public BLEServerCallbacks {
@@ -331,10 +437,25 @@ void loop() {
       break;
 
     case 'T':
-      if (justChanged || now - lastAnimTime > 90) {
-        drawThinkingDeep(animFrame);
-        animFrame++;
+      if (justChanged) {
+        // Fresh THINKING turn always starts back at the chase animation,
+        // not wherever the rotation happened to leave off last time.
+        thinkingAnimIndex = ANIM_CHASE;
+        thinkingAnimSwitchedAt = now;
+        animFrame = 0;
+        drawThinkingFrame(thinkingAnimIndex, animFrame);
         lastAnimTime = now;
+      } else {
+        if (now - thinkingAnimSwitchedAt > THINKING_ANIM_SWITCH_MS) {
+          thinkingAnimIndex = (thinkingAnimIndex + 1) % THINKING_ANIM_COUNT;
+          thinkingAnimSwitchedAt = now;
+          animFrame = 0;  // let the newly-switched-to animation start clean
+        }
+        if (now - lastAnimTime > 90) {
+          drawThinkingFrame(thinkingAnimIndex, animFrame);
+          animFrame++;
+          lastAnimTime = now;
+        }
       }
       break;
 

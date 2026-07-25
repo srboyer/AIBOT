@@ -55,6 +55,7 @@ BACKENDS = {
     "chatgpt_desktop": "chatgpt_desktop_backend.ChatGPTDesktopBackend",
     "claude_web": "claude_web_backend.ClaudeWebBackend",
     "chatgpt_web": "chatgpt_web_backend.ChatGPTWebBackend",
+    "claude_code_vscode": "claude_code_vscode_backend.ClaudeCodeVSCodeBackend",
 }
 
 # When several apps are active at once, the light shows whichever state has

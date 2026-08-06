@@ -36,7 +36,9 @@ Usage
 """
 
 import argparse
+import json
 import re
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -210,6 +212,61 @@ class ArduinoLight(Light):
 
     def close(self) -> None:
         self.ser.close()
+
+
+def find_classic_bt_port(device_name: str = "ClaudeStatusMatrix") -> str:
+    """Resolves the Windows COM port for a paired Classic Bluetooth SPP
+    device (e.g. an ESP32 running claude_matrix_esp32_classicbt.ino), so a
+    --port value never has to be hand-looked-up per machine.
+
+    Windows creates TWO "Standard Serial over Bluetooth link" ports per
+    pairing: the real outgoing one (its PnP instance ID embeds the paired
+    device's actual Bluetooth MAC) and a generic incoming listener shared
+    across all pairings (instance ID MAC is the null address
+    000000000000). Opening the wrong one just hangs forever with no error
+    -- the two are indistinguishable by name or port number, only by MAC.
+    This shells out to PowerShell's Get-PnpDevice (the same query used to
+    debug this by hand) to do that matching automatically.
+    """
+
+    def _pnp_query(ps_filter: str):
+        script = (
+            f"Get-PnpDevice | Where-Object {{ {ps_filter} }} | "
+            "Select-Object FriendlyName, InstanceId | ConvertTo-Json -Compress"
+        )
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+        parsed = json.loads(result.stdout)
+        return parsed if isinstance(parsed, list) else [parsed]
+
+    devices = _pnp_query(f"$_.FriendlyName -eq '{device_name}' -and $_.Class -eq 'Bluetooth'")
+    if not devices:
+        raise RuntimeError(
+            f"{device_name!r} is not paired. Pair it first: Settings > Bluetooth & devices > "
+            "Add device > Bluetooth."
+        )
+
+    mac_match = re.search(r"DEV_([0-9A-Fa-f]{12})", devices[0]["InstanceId"])
+    if not mac_match:
+        raise RuntimeError(f"Could not read a Bluetooth address for {device_name!r}.")
+    mac = mac_match.group(1).upper()
+
+    ports = _pnp_query("$_.FriendlyName -like 'Standard Serial over Bluetooth link*'")
+    for port in ports:
+        if mac in port["InstanceId"].upper():
+            com_match = re.search(r"\((COM\d+)\)", port["FriendlyName"])
+            if com_match:
+                return com_match.group(1)
+
+    raise RuntimeError(
+        f"{device_name!r} is paired but no matching Bluetooth COM port was found yet. "
+        "Check Settings > Bluetooth & devices > Devices > More Bluetooth options > COM Ports, "
+        "or try re-pairing."
+    )
 
 
 class BLELight(Light):
@@ -462,6 +519,12 @@ def main():
     parser.add_argument("--port", type=str, default=None,
                          help="Use an Arduino over this serial port (e.g. /dev/ttyUSB0, COM3) instead of console output.")
     parser.add_argument("--baud", type=int, default=9600, help="Baud rate for --port (must match the .ino sketch).")
+    parser.add_argument("--classic-bt", action="store_true",
+                         help="Auto-detect a paired Classic Bluetooth SPP device's COM port "
+                              "(e.g. an ESP32 running claude_matrix_esp32_classicbt.ino) instead of "
+                              "specifying --port by hand.")
+    parser.add_argument("--classic-bt-name", type=str, default="ClaudeStatusMatrix",
+                         help="Paired device name to look up for --classic-bt.")
     parser.add_argument("--ble", action="store_true", help="Use an ESP32-C3 over Bluetooth LE instead of console output.")
     parser.add_argument("--ble-name", type=str, default="ClaudeStatusMatrix", help="BLE device name to scan for (--ble).")
     parser.add_argument("--ble-address", type=str, default=None, help="Skip scanning, connect directly to this BLE address.")
@@ -469,6 +532,10 @@ def main():
 
     if args.port:
         light: Light = ArduinoLight(args.port, args.baud)
+    elif args.classic_bt:
+        port = find_classic_bt_port(args.classic_bt_name)
+        print(f"Found {args.classic_bt_name!r} on {port}.")
+        light = ArduinoLight(port, args.baud)
     elif args.ble:
         light = BLELight(device_name=args.ble_name, address=args.ble_address)
     elif args.gpio:

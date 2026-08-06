@@ -23,10 +23,11 @@ in BACKENDS below -- nothing else changes, including the firmware.
 
 Setup:
     py -3.11 -m pip install pywinauto
-    (plus pyserial / bleak, depending on which --port/--ble/--gpio you use)
+    (plus pyserial / bleak, depending on which --port/--classic-bt/--ble/--gpio you use)
 
 Usage:
     py -3.11 chat_watcher.py --ble                          (watch everything)
+    py -3.11 chat_watcher.py --classic-bt                   (Classic BT SPP board, auto-detected COM port)
     py -3.11 chat_watcher.py --backend claude_desktop --ble (single app, old behavior)
     py -3.11 chat_watcher.py --backend chatgpt_desktop --port COM5
     py -3.11 chat_watcher.py                                (console only)
@@ -44,6 +45,7 @@ from claude_light_tracker import (
     Light,
     State,
     StateTracker,
+    find_classic_bt_port,
 )
 
 POLL_INTERVAL = 1.0  # seconds between checks; raise this if it feels sluggish
@@ -303,6 +305,12 @@ def main():
                               f"Available: {', '.join(BACKENDS)}")
     parser.add_argument("--port", type=str, default=None, help="Arduino serial port (e.g. COM5).")
     parser.add_argument("--baud", type=int, default=9600, help="Baud rate for --port.")
+    parser.add_argument("--classic-bt", action="store_true",
+                         help="Auto-detect a paired Classic Bluetooth SPP device's COM port "
+                              "(e.g. an ESP32 running claude_matrix_esp32_classicbt.ino) instead of "
+                              "specifying --port by hand.")
+    parser.add_argument("--classic-bt-name", type=str, default="ClaudeStatusMatrix",
+                         help="Paired device name to look up for --classic-bt.")
     parser.add_argument("--gpio", action="store_true", help="Use Raspberry Pi GPIO LEDs instead of console output.")
     parser.add_argument("--ble", action="store_true", help="Use an ESP32-C3 over Bluetooth LE instead of console output.")
     parser.add_argument("--ble-name", type=str, default="ClaudeStatusMatrix", help="BLE device name to scan for (--ble).")
@@ -331,6 +339,10 @@ def main():
             def make_light():
                 if args.port:
                     return ArduinoLight(args.port, args.baud)
+                elif args.classic_bt:
+                    port = find_classic_bt_port(args.classic_bt_name)
+                    print(f"[light] Found {args.classic_bt_name!r} on {port}.")
+                    return ArduinoLight(port, args.baud)
                 elif args.ble:
                     return BLELight(device_name=args.ble_name, address=args.ble_address)
                 elif args.gpio:

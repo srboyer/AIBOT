@@ -14,24 +14,74 @@ Both Claude Desktop and ChatGPT Desktop backends are built and confirmed
 working over BLE. No reflashing or code changes needed to switch between
 them — just re-run the watcher with a different `--backend` flag.
 
+Classic Bluetooth (SPP) is also built and confirmed working, on a separate
+plain-ESP32 board — see "Classic Bluetooth (SPP) setup" below. Same
+backends, same protocol; only the transport/board differs.
+
 ## Hardware
 
-- **ESP32-C3** + **MAX7219 8x8 LED dot-matrix** display, connected over
-  **BLE** (the C3 is BLE-only, no Classic Bluetooth/SPP).
-- Pins: DIN=GPIO4, CLK=GPIO5, CS=GPIO6. Library: MD_MAX72XX (not
-  LedControl, which is AVR-only and won't compile for the C3).
-- BLE device name: `ClaudeStatusMatrix`. Service UUID
-  `6E400001-B5A3-F393-E0A9-E50E24DCCA9E` (Nordic UART Service), RX char
-  `6E400002-B5A3-F393-E0A9-E50E24DCCA9E`.
-- Firmware file: `claude_matrix_esp32c3_ble.ino` — this is the one
-  currently in use. Two earlier hardware paths also exist in the file set
-  (Arduino Uno via USB serial, ESP32 classic via Bluetooth SPP) but are
-  superseded.
-- Protocol is a single ASCII byte per state: `A`=ANALYZING, `T`=THINKING,
-  `Q`=QUESTION, `D`=DONE/IDLE. The firmware has zero knowledge of which
-  chatbot sent the byte — this is what makes multi-app support possible
-  without reflashing.
-- Confirmed working on USB power bank power.
+Two supported boards/transports, same MAX7219 display and same protocol
+(single ASCII byte per state: `A`=ANALYZING, `T`=THINKING, `Q`=QUESTION,
+`D`=DONE/IDLE — the firmware has zero knowledge of which chatbot sent the
+byte, which is what makes multi-app support possible without reflashing):
+
+- **ESP32-C3** + **MAX7219 8x8 LED dot-matrix**, connected over **BLE**
+  (the C3 is BLE-only, no Classic Bluetooth/SPP radio).
+  - Pins: DIN=GPIO4, CLK=GPIO5, CS=GPIO6. Library: MD_MAX72XX (not
+    LedControl, which is AVR-only and won't compile for the C3).
+  - BLE device name: `ClaudeStatusMatrix`. Service UUID
+    `6E400001-B5A3-F393-E0A9-E50E24DCCA9E` (Nordic UART Service), RX char
+    `6E400002-B5A3-F393-E0A9-E50E24DCCA9E`.
+  - Firmware file: `claude_matrix_esp32c3_ble.ino`.
+  - Confirmed working on USB power bank power.
+- **Plain ESP32** (e.g. NodeMCU-32S) + the same MAX7219 display, connected
+  over **Classic Bluetooth (SPP)** — see "Classic Bluetooth (SPP) setup"
+  below.
+  - Pins: DIN=GPIO23, CLK=GPIO18, CS=GPIO21 (chosen to avoid the flash
+    pins, strapping pins, and input-only pins on a full ESP32).
+  - Firmware file: `claude_matrix_esp32_classicbt.ino`.
+  - No BLE heartbeat/ghost-timeout machinery needed — SPP gives prompt,
+    reliable connect/disconnect events, unlike BLE's flaky supervision
+    timeouts.
+
+An earlier Arduino Uno / USB-serial path also exists in the file set
+(`claude_matrix_tracker2.ino`) but is superseded by both boards above.
+
+## Classic Bluetooth (SPP) setup
+
+Unlike BLE, a Classic Bluetooth SPP device needs OS-level pairing before
+Windows will expose it as a COM port at all:
+
+1. Flash `claude_matrix_esp32_classicbt.ino` to a plain ESP32 (Tools >
+   Board must be a board with a Classic Bluetooth radio, e.g. "ESP32 Dev
+   Module" — the ESP32-C3 cannot run this sketch).
+2. Pair it: **Settings > Bluetooth & devices > Add device > Bluetooth**,
+   select `ClaudeStatusMatrix`.
+3. Run the watcher with `--classic-bt` (auto-detects the COM port) instead
+   of `--ble`:
+   ```
+   py -3.11 chat_watcher.py --classic-bt
+   ```
+
+**Gotcha: Windows creates TWO "Standard Serial over Bluetooth link" COM
+ports per pairing**, and only one of them actually connects to the device:
+- The real outgoing port — its PnP instance ID embeds the paired device's
+  actual Bluetooth MAC address.
+- A generic incoming listener shared across *all* Bluetooth pairings on
+  the machine — its instance ID MAC is the null address `000000000000`.
+  Opening this one just hangs forever with no error, since it's waiting
+  for an inbound connection that will never arrive.
+
+The two are indistinguishable by friendly name or port number alone —
+`--classic-bt` (via `find_classic_bt_port()` in `claude_light_tracker.py`)
+resolves this automatically by shelling out to PowerShell's
+`Get-PnpDevice` and matching MAC addresses, the same way this was
+originally diagnosed by hand. If you'd rather skip auto-detection, the
+manual equivalent is:
+```
+Get-PnpDevice | Where-Object FriendlyName -like "*Standard Serial over Bluetooth*" | Select FriendlyName, InstanceId
+```
+then pass the matching one directly: `--port COM<N>`.
 
 ## Software architecture
 
@@ -56,8 +106,8 @@ chat_watcher.py              <- generic runner, drives everything below
 
 Run with: `py -3.11 chat_watcher.py --backend claude_desktop --ble` or
 `--backend chatgpt_desktop --ble` (plus `--debug` for verbose tracing,
-`--ble-name`/`--ble-address` to target a specific device, or `--port
-COM5` / `--gpio` instead of `--ble`).
+`--ble-name`/`--ble-address` to target a specific device, or `--classic-bt`
+/ `--port COM5` / `--gpio` instead of `--ble`).
 
 ### chat_backend.py — the interface
 
@@ -255,8 +305,11 @@ that.
 - `chat_backend.py` — backend interface
 - `claude_desktop_backend.py` — Claude Desktop detection logic
 - `chatgpt_desktop_backend.py` — ChatGPT Desktop detection logic
-- `claude_light_tracker.py` — State enum, StateTracker, Light classes
+- `claude_light_tracker.py` — State enum, StateTracker, Light classes,
+  `find_classic_bt_port()`
 - `claude_matrix_esp32c3_ble.ino` — active firmware (ESP32-C3 + BLE)
+- `claude_matrix_esp32_classicbt.ino` — active firmware (plain ESP32 +
+  Classic Bluetooth SPP)
 - `inspect_window.py` — generic UI-tree inspector
 
 **Diagnostics (kept for reference, not part of the running system):**
@@ -268,15 +321,14 @@ that.
 - `claude_desktop_watcher.py` (pre-refactor, Claude-only monolithic
   watcher — logic now lives in `chat_watcher.py` +
   `claude_desktop_backend.py`)
-- `claude_matrix_tracker2.ino` (Arduino Uno / USB serial version)
-- `claude_matrix_esp32_bt.ino` (ESP32 classic Bluetooth SPP version — not
-  compatible with the C3 board actually in use)
+- `claude_matrix_tracker2.ino` (Arduino Uno / USB serial version —
+  superseded by both `claude_matrix_esp32c3_ble.ino` and
+  `claude_matrix_esp32_classicbt.ino`)
 - `claude_live.py` (alternative: drives the light from real Anthropic API
   streaming instead of watching the desktop app)
 
 **Setup:**
-- `start_claude_watcher.bat` / `.vbs` — Windows Startup-folder launchers
-  (currently point at the old watcher; would need updating to call
-  `chat_watcher.py` with the desired `--backend` flag)
+- `start_claude_watcher.bat` / `.vbs` — Windows Startup-folder launchers,
+  currently `chat_watcher.py --classic-bt`
 - `py -3.11 -m pip install pyserial pywinauto bleak` (add `anthropic` too
   if using `claude_live.py`)

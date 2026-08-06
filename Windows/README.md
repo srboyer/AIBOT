@@ -10,9 +10,10 @@ touching the hardware or core logic at all.
 
 ## Current status
 
-Both Claude Desktop and ChatGPT Desktop backends are built and confirmed
-working over BLE. No reflashing or code changes needed to switch between
-them — just re-run the watcher with a different `--backend` flag.
+Claude Desktop, ChatGPT Desktop, and the Windows Copilot app backends are
+all built and confirmed working over BLE. No reflashing or code changes
+needed to switch between them — just re-run the watcher with a different
+`--backend` flag (or `--backend all` to watch everything at once).
 
 Classic Bluetooth (SPP) is also built and confirmed working, on a separate
 plain-ESP32 board — see "Classic Bluetooth (SPP) setup" below. Same
@@ -96,6 +97,7 @@ chat_watcher.py              <- generic runner, drives everything below
     +-- chat_backend.py       <- interface every backend implements
     +-- claude_desktop_backend.py   <- Claude Desktop detection logic
     +-- chatgpt_desktop_backend.py  <- ChatGPT Desktop detection logic
+    +-- copilot_desktop_backend.py  <- Windows Copilot app detection logic
     +-- claude_code_vscode_backend.py  <- Claude Code (VS Code) detection logic
     |       +-- claude_code_status_hook.py    <- writes status (Claude Code hook)
     |       +-- claude_code_status_shared.py  <- shared status-file path constant
@@ -174,6 +176,29 @@ different, task-based UI that this does not target).
   images, map widgets, cards) injects large amounts of irrelevant noise
   into the UI tree — but since detection never reads response text or
   scans the message list for this backend, none of that noise matters.
+
+### copilot_desktop_backend.py — Windows Copilot detection
+
+Uses pywinauto UI Automation on the "Copilot" window (the built-in Windows
+11 taskbar app, WebView2-based).
+- **Detection signal**: a toolbar button titled "Talk to Copilot" while
+  idle swaps to "Interrupt message" the instant a response starts
+  generating, and swaps back the instant it finishes — same idea as
+  ChatGPT Desktop's Send/Stop toggle, just a different button/labels.
+  Confirmed live via a rapid 0.3s-interval button-title poll across a real
+  generation (`Talk to Copilot` -> `Interrupt message` -> briefly `''` mid-
+  transition -> back to `Talk to Copilot`); the blip to an empty title is
+  treated as still-generating so it doesn't read as a premature finish.
+- **No confirmed THINKING or QUESTION equivalent** (same limitation as
+  ChatGPT Desktop) — always reports `False` for both.
+- **Hit the accessibility-tree-stays-empty gotcha** (see below) on first
+  inspection — only window-chrome buttons (Minimize/Maximize/Close) were
+  exposed until Narrator had been run once with the app open.
+- **Notable UI quirk**: the composer also has a "Submit message" button,
+  but it only reflects whether the text box currently has typed text (it's
+  absent on the empty welcome screen, present the instant you start
+  typing) — it says nothing about generation state, so it isn't used for
+  detection, unlike the toggle button above.
 
 ### claude_code_vscode_backend.py — Claude Code (in VS Code) detection
 
@@ -260,10 +285,10 @@ opaque scrolling text buffer, not structured elements). So this backend does
 
 ### Known gotcha: accessibility tree stays empty
 
-Electron/Chromium desktop apps (both Claude Desktop and ChatGPT Desktop
-hit this) sometimes expose only empty, unlabeled `Pane` elements to UI
-Automation until a real screen reader has been detected running at least
-once. Fix: enable Windows Narrator (`Win+Ctrl+Enter`), fully quit and
+Electron/Chromium/WebView2 desktop apps (Claude Desktop, ChatGPT Desktop,
+and the Windows Copilot app have all hit this) sometimes expose only
+empty, unlabeled `Pane` elements to UI Automation until a real screen
+reader has been detected running at least once. Fix: enable Windows Narrator (`Win+Ctrl+Enter`), fully quit and
 reopen the target app while Narrator is running, then Narrator can be
 turned back off — the app keeps exposing full accessibility info after
 that.
@@ -274,15 +299,16 @@ that.
   platform-specific accessibility API rewrite.
 - BLE disconnect mid-session triggers the outer recovery loop and a
   ~5s reconnect/rescan.
-- ChatGPT backend has no QUESTION state and no THINKING state (see above);
-  Claude backend has both.
+- ChatGPT and Copilot backends have no QUESTION state and no THINKING
+  state (see above); Claude backend has both.
 - Switching between backends currently means restarting the watcher with
   a different `--backend` flag — no automatic "detect which app is
-  focused" switching yet (see roadmap).
+  focused" switching yet (see roadmap). Multi-app mode (`--backend all`,
+  the default) sidesteps this by watching everything at once.
 
 ## Roadmap / possible next steps
 
-- [ ] Real-world hardening — run both backends through normal daily use to
+- [ ] Real-world hardening — run all backends through normal daily use to
       surface edge cases (mid-generation app switching, regenerating a
       response, network hiccups) that targeted testing hasn't hit yet.
 - [ ] Auto-detect which app currently has focus and switch backends
@@ -305,6 +331,7 @@ that.
 - `chat_backend.py` — backend interface
 - `claude_desktop_backend.py` — Claude Desktop detection logic
 - `chatgpt_desktop_backend.py` — ChatGPT Desktop detection logic
+- `copilot_desktop_backend.py` — Windows Copilot app detection logic
 - `claude_light_tracker.py` — State enum, StateTracker, Light classes,
   `find_classic_bt_port()`
 - `claude_matrix_esp32c3_ble.ino` — active firmware (ESP32-C3 + BLE)

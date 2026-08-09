@@ -8,22 +8,29 @@ Claude Code hook command (see ~/.claude/settings.json) for SessionStart,
 SessionEnd, UserPromptSubmit, PreToolUse, Notification, and Stop. Claude
 Code invokes it -- feeding a JSON payload on stdin -- every time one of
 those fires, and it just overwrites a small status file with the latest
-event. claude_code_vscode_backend.py polls that file; that's the entire
+event. claude_code_backend.py polls that file; that's the entire
 "backend".
 
-VS CODE DETECTION -- Claude Code doesn't say anywhere in the hook payload
-itself whether this session is attached to VS Code, so that part comes from
-the process environment instead, confirmed by inspecting a real running
-session and cross-checking against the installed claude.exe:
-    - CLAUDE_CODE_ENTRYPOINT=claude-vscode -- set when running as the
-      native VS Code extension (the chat panel).
-    - TERM_PROGRAM=vscode -- set by VS Code on every child process of its
-      OWN integrated terminal, so this also catches `claude` typed directly
-      into a VS Code terminal tab (a plain CLI session, not the extension).
-Hook commands are spawned as children of the `claude` process, which
-inherits whichever of these its own parent (VS Code) set -- so both are
-visible here exactly as they would be to a `printenv` run manually in the
-same window.
+HOST LABEL, NOT A GATE -- Claude Code doesn't say anywhere in the hook
+payload itself what it's running inside, so that comes from the process
+environment instead. Hook commands are spawned as children of the `claude`
+process, which inherits whichever of these its own parent set -- visible
+here exactly as they'd be to a `printenv` run manually in the same window:
+    - CLAUDE_CODE_ENTRYPOINT -- set by a native editor integration (e.g.
+      `claude-vscode` for VS Code's chat panel, confirmed by inspecting a
+      real running session and cross-checking against the installed
+      claude.exe). Whatever a JetBrains/Cursor/Windsurf/etc. plugin sets
+      here is captured as-is and used as the host label, without this
+      project needing to know or hardcode that value in advance.
+    - TERM_PROGRAM -- set by whatever terminal emulator is hosting a plain
+      `claude` CLI session (VS Code's integrated terminal sets this to
+      `vscode`; other terminals set their own name).
+This is recorded purely as a LABEL for the backend's own printed/debug
+output -- which host it's running in was never something the state
+detection itself needed. Every session is tracked identically regardless
+of host (this project is meant to work no matter which editor/terminal a
+customer happens to use), so an unrecognized or absent value just falls
+back to "unknown" rather than being dropped.
 
 Registration (~/.claude/settings.json), one identical command for every
 event listed above -- the payload's own "hook_event_name" field is what
@@ -54,21 +61,18 @@ def main():
     except Exception:
         payload = {}
 
-    is_vscode = (
-        os.environ.get("CLAUDE_CODE_ENTRYPOINT", "").startswith("claude-vscode")
-        or os.environ.get("TERM_PROGRAM") == "vscode"
-    )
+    host = os.environ.get("CLAUDE_CODE_ENTRYPOINT") or os.environ.get("TERM_PROGRAM") or "unknown"
 
     status = {
         "event": payload.get("hook_event_name", "Unknown"),
-        "vscode": is_vscode,
+        "host": host,
         "session_id": payload.get("session_id"),
         "cwd": payload.get("cwd"),
         # Notification-only fields -- absent/None for every other event.
         # notification_type is what lets the backend tell an actual
         # "I need you" prompt apart from the harmless "still waiting on
         # you" idle nudge (notification_type "idle_prompt") that fires
-        # after ~60s of inactivity; see claude_code_vscode_backend.py.
+        # after ~60s of inactivity; see claude_code_backend.py.
         "notification_type": payload.get("notification_type"),
         "message": payload.get("message"),
         "written_at": time.time(),

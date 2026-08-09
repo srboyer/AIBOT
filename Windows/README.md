@@ -98,7 +98,7 @@ chat_watcher.py              <- generic runner, drives everything below
     +-- claude_desktop_backend.py   <- Claude Desktop detection logic
     +-- chatgpt_desktop_backend.py  <- ChatGPT Desktop detection logic
     +-- copilot_desktop_backend.py  <- Windows Copilot app detection logic
-    +-- claude_code_vscode_backend.py  <- Claude Code (VS Code) detection logic
+    +-- claude_code_backend.py      <- Claude Code detection logic (any editor/terminal)
     |       +-- claude_code_status_hook.py    <- writes status (Claude Code hook)
     |       +-- claude_code_status_shared.py  <- shared status-file path constant
     |
@@ -200,11 +200,11 @@ Uses pywinauto UI Automation on the "Copilot" window (the built-in Windows
   typing) — it says nothing about generation state, so it isn't used for
   detection, unlike the toggle button above.
 
-### claude_code_vscode_backend.py — Claude Code (in VS Code) detection
+### claude_code_backend.py — Claude Code detection (any editor/terminal)
 
 Claude Code is a CLI, not a windowed app -- there's no button toggle or
-input-box placeholder for UI Automation to watch (a VS Code terminal is one
-opaque scrolling text buffer, not structured elements). So this backend does
+input-box placeholder for UI Automation to watch (a terminal is one opaque
+scrolling text buffer, not structured elements). So this backend does
 **zero UI automation**. Instead it rides Claude Code's own hook system:
 
 - `claude_code_status_hook.py` is registered in `~/.claude/settings.json`
@@ -215,14 +215,19 @@ opaque scrolling text buffer, not structured elements). So this backend does
   `~/.claude/claude_code_status.json`) each time.
 - The backend just polls that file for a newer mtime -- no window handle,
   no reconnect-by-UIA.
-- **"Is this VS Code?"** isn't in the hook payload itself, so the hook script
-  reads it from the process environment instead (hook commands inherit
-  whatever Claude Code's own parent process set): `CLAUDE_CODE_ENTRYPOINT=
-  claude-vscode` for the native VS Code extension (chat panel), or
-  `TERM_PROGRAM=vscode` for `claude` typed directly into a VS Code
-  integrated terminal tab. Both were confirmed by inspecting a real running
-  session's environment and cross-checking the literal strings baked into
-  the installed `claude.exe`.
+- **Host-agnostic by design**: since it's unknown up front which
+  editor/terminal a given customer will actually use, this backend tracks
+  Claude Code regardless of host rather than gating on one — VS Code,
+  JetBrains, Cursor, Windsurf, and a bare terminal are all treated
+  identically. A `host` label is still captured (from `CLAUDE_CODE_
+  ENTRYPOINT`, set by a native editor integration, e.g. `claude-vscode` for
+  VS Code's chat panel; or `TERM_PROGRAM`, set by whatever terminal is
+  hosting a plain `claude` CLI session) purely for printed/debug output —
+  it's informational, never a filter, and an unrecognized/absent value
+  just falls back to `"unknown"` instead of being dropped. This means any
+  future host (a JetBrains or Cursor plugin this project has never
+  inspected) is tracked correctly from day one without needing its exact
+  environment-variable value hardcoded in advance.
 - **Setup required**: this backend does nothing until those hooks exist.
   Until then, `try_connect()` just never succeeds -- same as any other
   backend whose target app isn't open, not an error.
@@ -251,10 +256,10 @@ opaque scrolling text buffer, not structured elements). So this backend does
   question-hold logic, QUESTION holds until the next `UserPromptSubmit` or
   `PreToolUse` shows real progress resumed.
 - **Single session only**: the status file holds one session's latest
-  event, last-writer-wins -- two concurrent Claude Code sessions in VS Code
-  (two chat panels, or a panel plus a terminal session) will stomp on each
-  other, the same limitation every other backend here has with multiple
-  windows of the same app.
+  event, last-writer-wins -- two concurrent Claude Code sessions (two
+  editor panels, a panel plus a terminal session, or two different hosts
+  at once) will stomp on each other, the same limitation every other
+  backend here has with multiple windows of the same app.
 - **Interrupted/rejected turns**: Claude Code fires no hook at all for "the
   user hit Escape" or "the user rejected this tool call" -- confirmed live,
   by watching a real session's status file stay on `PreToolUse` forever
@@ -332,6 +337,9 @@ that.
 - `claude_desktop_backend.py` — Claude Desktop detection logic
 - `chatgpt_desktop_backend.py` — ChatGPT Desktop detection logic
 - `copilot_desktop_backend.py` — Windows Copilot app detection logic
+- `claude_code_backend.py`, `claude_code_status_hook.py`,
+  `claude_code_status_shared.py` — Claude Code detection (hook-driven, any
+  editor/terminal)
 - `claude_light_tracker.py` — State enum, StateTracker, Light classes,
   `find_classic_bt_port()`
 - `claude_matrix_esp32c3_ble.ino` — active firmware (ESP32-C3 + BLE)

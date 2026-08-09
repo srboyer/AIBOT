@@ -57,7 +57,7 @@ BACKENDS = {
     "chatgpt_desktop": "chatgpt_desktop_backend.ChatGPTDesktopBackend",
     "claude_web": "claude_web_backend.ClaudeWebBackend",
     "chatgpt_web": "chatgpt_web_backend.ChatGPTWebBackend",
-    "claude_code_vscode": "claude_code_vscode_backend.ClaudeCodeVSCodeBackend",
+    "claude_code": "claude_code_backend.ClaudeCodeBackend",
     "copilot_desktop": "copilot_desktop_backend.CopilotDesktopBackend",
 }
 

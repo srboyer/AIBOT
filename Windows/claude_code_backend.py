@@ -1,20 +1,25 @@
 """
-claude_code_vscode_backend.py
+claude_code_backend.py
 
-ChatBackend implementation for Claude Code running attached to VS Code --
-either the native VS Code extension (chat panel) or the `claude` CLI typed
-directly into a VS Code integrated terminal tab.
+ChatBackend implementation for Claude Code, the CLI/agent -- regardless of
+which editor or terminal it's running inside. This project is meant to work
+no matter which of those a given customer happens to use, so this backend
+deliberately does not gate on host: VS Code, JetBrains, Cursor, Windsurf, a
+bare terminal, or anything else that spawns `claude` are all tracked
+identically. See claude_code_status_hook.py's docstring for how the host is
+labeled (informational only, purely for printed/debug output) rather than
+used as a filter.
 
 Unlike every other backend here, this one does ZERO UI automation. Claude
 Code is a CLI/agent, not a windowed app with buttons to inspect -- there's
-nothing for pywinauto to grab onto (a VS Code terminal is one opaque scrolling
-text buffer, not structured elements). Instead, detection rides on Claude
-Code's own hook system: claude_code_status_hook.py is registered in
-~/.claude/settings.json against SessionStart, SessionEnd, UserPromptSubmit,
-PreToolUse, PostToolUse, Notification, and Stop, and overwrites a small
-status file (claude_code_status_shared.STATUS_FILE) every time one of those
-fires. This backend just polls that file -- no window handle, no
-reconnect-by-UIA, none of the usual fragility.
+nothing for pywinauto to grab onto (an integrated terminal is one opaque
+scrolling text buffer, not structured elements). Instead, detection rides
+on Claude Code's own hook system: claude_code_status_hook.py is registered
+in ~/.claude/settings.json against SessionStart, SessionEnd,
+UserPromptSubmit, PreToolUse, PostToolUse, Notification, and Stop, and
+overwrites a small status file (claude_code_status_shared.STATUS_FILE)
+every time one of those fires. This backend just polls that file -- no
+window handle, no reconnect-by-UIA, none of the usual fragility.
 
 SETUP REQUIRED -- this backend does nothing until the hooks are actually
 registered. See claude_code_status_hook.py's docstring for the exact
@@ -59,10 +64,10 @@ QUESTION -- an unrecognized type is treated as "might genuinely need you",
 not the reverse.
 
 CAVEAT -- single session only: the status file holds exactly one session's
-latest event, last-writer-wins. Multiple concurrent Claude Code sessions in
-VS Code (two chat panels, a panel plus a terminal session) will stomp on
-each other here, same limitation every other backend in this project has
-with multiple windows of the same app.
+latest event, last-writer-wins. Multiple concurrent Claude Code sessions
+(two editor panels, a panel plus a terminal session, or two different
+hosts at once) will stomp on each other here, same limitation every other
+backend in this project has with multiple windows of the same app.
 
 QUESTION -> answer received: there's no dedicated "permission granted" hook
 event, so (mirroring claude_desktop_backend.py's own awaiting_answer hold)
@@ -116,8 +121,8 @@ EMPTY_RESULT = {
 STALE_AFTER_SECONDS = 90.0
 
 
-class ClaudeCodeVSCodeBackend(ChatBackend):
-    name = "claude_code_vscode"
+class ClaudeCodeBackend(ChatBackend):
+    name = "claude_code"
 
     def __init__(self):
         self.last_mtime = 0.0
@@ -129,12 +134,13 @@ class ClaudeCodeVSCodeBackend(ChatBackend):
         # own State on the other side of the interface.
         self.busy = False
         self.last_event_at = time.monotonic()
+        self.host = None  # informational only -- see module docstring
 
     # -- ChatBackend interface --------------------------------------------
 
     def try_connect(self) -> bool:
         status = self._read_status()
-        if status is None or not status.get("vscode"):
+        if status is None:
             return False
         # A SessionEnd sitting as the latest event means the session that
         # wrote it has already closed -- don't "connect" to a corpse just
@@ -150,6 +156,7 @@ class ClaudeCodeVSCodeBackend(ChatBackend):
         self.awaiting_answer = False
         self.busy = False
         self.last_event_at = time.monotonic()
+        self.host = status.get("host")
         return True
 
     def connect(self):
@@ -157,11 +164,11 @@ class ClaudeCodeVSCodeBackend(ChatBackend):
         while not self.try_connect():
             attempt += 1
             if attempt == 1 or attempt % 12 == 0:
-                print("Waiting for Claude Code to be running in VS Code "
+                print("Waiting for Claude Code to be running somewhere "
                       "(hooks configured? see claude_code_status_hook.py's "
                       "docstring)...", file=sys.stderr)
             time.sleep(5)
-        print("Watching Claude Code in VS Code (hook-driven, no UI automation).")
+        print(f"Watching Claude Code (host: {self.host}; hook-driven, no UI automation).")
 
     def check_alive(self):
         # No persistent window/handle here to go stale -- liveness is
@@ -183,7 +190,7 @@ class ClaudeCodeVSCodeBackend(ChatBackend):
             if (self.busy and not self.awaiting_answer
                     and (time.monotonic() - self.last_event_at) > STALE_AFTER_SECONDS):
                 if debug:
-                    print(f"[debug] claude_code_vscode: no event for "
+                    print(f"[debug] claude_code: no event for "
                           f">{STALE_AFTER_SECONDS:.0f}s while busy -- assuming "
                           f"the turn ended silently (interrupted?) -> DONE")
                 result["finished"] = True
@@ -194,18 +201,20 @@ class ClaudeCodeVSCodeBackend(ChatBackend):
         self.last_event_at = time.monotonic()
 
         status = self._read_status()
-        if status is None or not status.get("vscode"):
-            return result  # file vanished mid-read, or a non-VS Code session wrote it
+        if status is None:
+            return result  # file vanished mid-read
 
+        self.host = status.get("host")
         event = status.get("event")
         if debug:
-            print(f"[debug] claude_code_vscode: event={event!r} "
+            print(f"[debug] claude_code: event={event!r} "
+                  f"host={self.host!r} "
                   f"session={status.get('session_id')!r} "
                   f"awaiting_answer={self.awaiting_answer}")
 
         if event == "SessionEnd":
             raise RuntimeError(
-                "Claude Code (VS Code) session ended -- SessionEnd hook fired. "
+                "Claude Code session ended -- SessionEnd hook fired. "
                 "Restarting watcher to look for the next session."
             )
 

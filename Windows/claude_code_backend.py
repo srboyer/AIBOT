@@ -71,9 +71,14 @@ backend in this project has with multiple windows of the same app.
 
 QUESTION -> answer received: there's no dedicated "permission granted" hook
 event, so (mirroring claude_desktop_backend.py's own awaiting_answer hold)
-this holds in QUESTION until the NEXT UserPromptSubmit or PreToolUse shows
-real progress resumed, then reports answer_received and lets the following
-poll's event decide the next state.
+this holds in QUESTION until either the NEXT UserPromptSubmit or PreToolUse
+shows real progress resumed (-> answer_received), OR a Stop shows the turn
+ended without one (-> finished directly, skipping answer_received -- there
+was no "resumed" moment to report). Both clear the hold; only
+UserPromptSubmit/PreToolUse used to, which left a Stop arriving mid-hold
+silently swallowed and the light stuck on QUESTION indefinitely (observed
+live -- a Notification doesn't guarantee a matching UserPromptSubmit/
+PreToolUse ever follows).
 
 INTERRUPTED/REJECTED TURNS -- Claude Code has no hook event for "the user
 hit Escape" or "the user rejected this tool call" specifically; when a turn
@@ -220,11 +225,22 @@ class ClaudeCodeBackend(ChatBackend):
 
         if self.awaiting_answer:
             # Hold entirely until real progress resumes, same as
-            # claude_desktop_backend.py's own question-hold logic.
+            # claude_desktop_backend.py's own question-hold logic. Stop ALSO
+            # clears the hold, straight to finished -- a Notification has no
+            # guarantee a matching UserPromptSubmit/PreToolUse ever follows
+            # (permission resolved some other way, or the turn just legitimately
+            # ends on its own). Without this, a Stop arriving mid-hold was
+            # silently swallowed by the `return result` below and the light
+            # stuck on QUESTION forever, until whatever NEXT turn happened to
+            # fire one of the other two events -- observed live.
             if event in ("UserPromptSubmit", "PreToolUse"):
                 result["answer_received"] = True
                 self.awaiting_answer = False
                 self.busy = True
+            elif event == "Stop":
+                result["finished"] = True
+                self.awaiting_answer = False
+                self.busy = False
             return result
 
         if event == "UserPromptSubmit":

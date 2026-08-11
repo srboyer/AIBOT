@@ -36,6 +36,7 @@ settings.json shape.
 
 import json
 import os
+import sys
 
 HOOK_EXE_NAME = "ClaudeCodeHook.exe"
 # Legacy marker: what the registered command looked like before the hook
@@ -61,10 +62,24 @@ def default_settings_path() -> str:
     return os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
 
 
+def _this_install_dir() -> str:
+    # NOT os.path.dirname(__file__) -- once this script is itself frozen by
+    # PyInstaller (see ClaudeCodeHookInstaller.spec), __file__ resolves
+    # inside the bundle's internal layout, not the real folder the exe is
+    # sitting in on disk. sys.executable is the actual running exe's path
+    # in that case. sys.frozen is the standard PyInstaller-set flag for
+    # telling the two situations apart; __file__ is correct (and
+    # sys.executable would just be some system python.exe) for a plain
+    # `py -3.11 claude_code_hook_installer.py` dev/test run.
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
 def default_hook_exe_path() -> str:
     # Co-located with this installer -- in the packaged product both files
     # ship in the same install directory.
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), HOOK_EXE_NAME)
+    return os.path.join(_this_install_dir(), HOOK_EXE_NAME)
 
 
 def build_hook_command(hook_exe_path: str) -> str:
@@ -148,8 +163,6 @@ def install(settings_path: str = None, hook_exe_path: str = None) -> bool:
 
 
 if __name__ == "__main__":
-    import sys
-
     dry_run = "--dry-run" in sys.argv
     settings_path = default_settings_path()
 

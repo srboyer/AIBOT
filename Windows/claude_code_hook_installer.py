@@ -32,6 +32,11 @@ lists: SessionStart, SessionEnd, UserPromptSubmit, PreToolUse, PostToolUse,
 Notification, Stop. PreToolUse/PostToolUse require a "matcher" ("*" = every
 tool); the others don't take one at all -- confirmed against a real
 settings.json shape.
+
+Also doubles as the uninstaller (`--uninstall`): strips exactly the entries
+_is_ours() recognizes and nothing else, same non-destructive philosophy in
+reverse. See the ClaudeStatusLight.iss [UninstallRun] entry -- that's what
+actually invokes this.
 """
 
 import json
@@ -133,6 +138,60 @@ def merge_hooks(settings: dict, hook_command: str) -> tuple[dict, bool]:
     return settings, changed
 
 
+def remove_hooks(settings: dict) -> tuple[dict, bool]:
+    """The uninstall-time counterpart to merge_hooks(): strips out every
+    entry _is_ours() recognizes and nothing else. Returns (updated_settings,
+    changed); never mutates the input. A group that held only our entry is
+    dropped entirely rather than left behind as an empty {"hooks": []} --
+    same for an event key whose groups all end up empty -- so a clean
+    uninstall leaves settings.json looking exactly like we were never
+    installed, not littered with empty scaffolding. Safe to call on a
+    settings dict that never had our hooks in it: changed comes back False."""
+    settings = json.loads(json.dumps(settings))  # deep copy, same reasoning as merge_hooks
+    hooks = settings.get("hooks")
+    if hooks is None:
+        return settings, False
+    changed = False
+
+    for event, _matcher in HOOK_EVENTS:
+        groups = hooks.get(event)
+        if not groups:
+            continue
+
+        kept_groups = []
+        for group in groups:
+            kept_entries = [
+                entry for entry in group.get("hooks", [])
+                if not (entry.get("type") == "command" and _is_ours(entry.get("command", "")))
+            ]
+            if len(kept_entries) != len(group.get("hooks", [])):
+                changed = True
+            if kept_entries:
+                kept_groups.append({**group, "hooks": kept_entries})
+            # else: group held only our entry -- drop it entirely
+
+        if kept_groups:
+            hooks[event] = kept_groups
+        else:
+            del hooks[event]
+
+    if not hooks:
+        del settings["hooks"]
+
+    return settings, changed
+
+
+def _write_settings(settings_path: str, updated: dict) -> None:
+    os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+    # Temp file + replace, same reasoning as claude_code_status_hook.py's own
+    # writes: Claude Code itself may read this file at an arbitrary moment,
+    # and a partial write must never hand it truncated JSON.
+    tmp_path = settings_path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(updated, f, indent=2)
+    os.replace(tmp_path, settings_path)
+
+
 def install(settings_path: str = None, hook_exe_path: str = None) -> bool:
     """Reads, merges, and writes back settings.json. Returns True if the
     file was actually changed (False means it was already correctly
@@ -151,22 +210,54 @@ def install(settings_path: str = None, hook_exe_path: str = None) -> bool:
     if not changed:
         return False
 
-    os.makedirs(os.path.dirname(settings_path), exist_ok=True)
-    # Temp file + replace, same reasoning as claude_code_status_hook.py's own
-    # writes: Claude Code itself may read this file at an arbitrary moment,
-    # and a partial write must never hand it truncated JSON.
-    tmp_path = settings_path + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(updated, f, indent=2)
-    os.replace(tmp_path, settings_path)
+    _write_settings(settings_path, updated)
+    return True
+
+
+def uninstall(settings_path: str = None) -> bool:
+    """Reads, strips our hook entries, and writes back settings.json.
+    Returns True if the file was actually changed. Called from
+    [UninstallRun] (see the .iss installer script) -- runs while
+    ClaudeCodeHook.exe still exists on disk (UninstallRun fires before
+    Setup deletes files), which is what makes this the right moment to do
+    it rather than leaving stale, permanently-broken hook entries behind
+    for a customer who uninstalls."""
+    settings_path = settings_path or default_settings_path()
+
+    try:
+        with open(settings_path, "r", encoding="utf-8") as f:
+            settings = json.load(f)
+    except FileNotFoundError:
+        return False
+
+    updated, changed = remove_hooks(settings)
+    if not changed:
+        return False
+
+    _write_settings(settings_path, updated)
     return True
 
 
 if __name__ == "__main__":
     dry_run = "--dry-run" in sys.argv
+    do_uninstall = "--uninstall" in sys.argv
     settings_path = default_settings_path()
 
-    if dry_run:
+    if do_uninstall:
+        if dry_run:
+            try:
+                with open(settings_path, "r", encoding="utf-8") as f:
+                    before = json.load(f)
+            except FileNotFoundError:
+                before = {}
+            after, changed = remove_hooks(before)
+            print(f"Would change {settings_path}: {changed}")
+            if changed:
+                print(json.dumps(after, indent=2))
+        else:
+            changed = uninstall()
+            print(f"{'Removed hooks from' if changed else 'No hooks found in'} {settings_path}")
+    elif dry_run:
         try:
             with open(settings_path, "r", encoding="utf-8") as f:
                 before = json.load(f)

@@ -237,6 +237,13 @@ def find_classic_bt_port(device_name: str = "ClaudeStatusMatrix") -> str:
         result = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
             capture_output=True, text=True, timeout=15,
+            # Packaged as a --windowed exe (no console of its own), so
+            # without this Windows pops a real visible console window for
+            # this child process -- and since a failed match retries every
+            # 5s forever (see run_multi()'s next_light_attempt), that's a
+            # PowerShell window flashing open indefinitely on any machine
+            # where the device isn't found yet.
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
         if result.returncode != 0 or not result.stdout.strip():
             return []

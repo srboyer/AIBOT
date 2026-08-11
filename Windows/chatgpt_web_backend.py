@@ -5,16 +5,26 @@ ChatBackend implementation for chatgpt.com open in a WEB BROWSER, via
 pywinauto UI Automation.
 
 Subclasses ChatGPTDesktopBackend and keeps its entire detection strategy:
-the Send<->Stop composer button toggle. Only the browser-specific parts
-change:
+the Send<->Stop composer button toggle, plus the "Custom answer for..."
+Edit-control signal for interactive clarifying questions (see that file's
+docstring). Only the browser-specific parts change:
 
-1. WINDOW FINDING -- regex-match any top-level window whose title mentions
-   ChatGPT AND ends with a known browser name (so the desktop app's exact
-   "ChatGPT" title can never cross-match). Since this backend reads no
-   message tree, there's less structure available to validate a candidate
-   window with -- a "search" title filter plus the ChatGPT-before-browser
-   ordering is the guard. If it ever latches onto the wrong window, run
-   with --debug and check which title it connected to.
+1. WINDOW FINDING -- NOT by title. Claude's web tab titles always keep
+   "- Claude" even after the conversation gets auto-titled (see
+   claude_web_backend.py's TITLE_RE), but ChatGPT's tab title becomes JUST
+   the conversation's own title once auto-titled ("Trip Planning
+   Assistance", not "Trip Planning Assistance - ChatGPT") -- confirmed live
+   against a real renamed conversation. A title regex requiring the word
+   "ChatGPT" therefore only ever matches a brand-new, still-unnamed chat,
+   and silently fails to (re)connect to literally every real conversation
+   a few seconds later. Candidates are instead: any top-level window ending
+   in a known browser name (BROWSER_SUFFIX, cheap title check, filters out
+   non-browser windows before any tree walk), validated by requiring the
+   browser's own address bar to show a chatgpt.com URL
+   (CHATGPT_URL_EDIT_RE) -- reliable regardless of tab title/renaming, and
+   incidentally a strictly better guard than the old title-content
+   filtering ever was (a Google search results page merely mentioning
+   "chatgpt" was never going to have chatgpt.com as ITS OWN address).
 
 2. STOP-BUTTON LABEL -- the web version may not title the button exactly
    "Stop" (e.g. "Stop streaming"). Detection therefore matches any Button
@@ -46,11 +56,16 @@ from chatgpt_desktop_backend import ChatGPTDesktopBackend
 
 BROWSER_SUFFIX = r"(Google Chrome|Microsoft.{0,2}Edge|Mozilla Firefox|Brave|Opera|Vivaldi)$"
 
+# Matches the browser's address bar Edit control showing a chatgpt.com URL,
+# with or without a "https://" / "www." prefix -- see module docstring for
+# why this replaces title-based matching entirely.
+CHATGPT_URL_EDIT_RE = r".*chatgpt\.com.*"
+
 
 class ChatGPTWebBackend(ChatGPTDesktopBackend):
     name = "chatgpt_web"
 
-    TITLE_RE = re.compile(r"ChatGPT.*" + BROWSER_SUFFIX, re.IGNORECASE)
+    BROWSER_RE = re.compile(BROWSER_SUFFIX, re.IGNORECASE)
 
     # Matches "Stop", "Stop streaming", "Stop generating", ... but not
     # words merely containing "stop".
@@ -67,8 +82,17 @@ class ChatGPTWebBackend(ChatGPTDesktopBackend):
                     title = w.window_text()
                 except Exception:
                     continue
-                if self.TITLE_RE.search(title) and "search" not in title.lower():
-                    specs.append(desktop.window(handle=w.handle))
+                if not self.BROWSER_RE.search(title):
+                    continue
+                spec = desktop.window(handle=w.handle)
+                try:
+                    has_chatgpt_url = spec.child_window(
+                        control_type="Edit", title_re=CHATGPT_URL_EDIT_RE
+                    ).exists(timeout=0.2, retry_interval=0.1)
+                except Exception:
+                    continue
+                if has_chatgpt_url:
+                    specs.append(spec)
         except Exception:
             pass
         return specs
@@ -78,6 +102,7 @@ class ChatGPTWebBackend(ChatGPTDesktopBackend):
         for spec in self._candidate_window_specs():
             self.win = spec
             self.armed = False
+            self.awaiting_answer = False
             return True
         return False
 

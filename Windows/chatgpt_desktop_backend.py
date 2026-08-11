@@ -7,16 +7,23 @@ not Codex mode), via pywinauto UI Automation.
 Detection strategy: ChatGPT swaps its composer's 'Send' button for a
 'Stop' button the moment it starts generating a response, and swaps back
 the moment it finishes. Confirmed live and stable across a real ~45s
-generation with no flicker, so this is the sole signal used here --
+generation with no flicker, so this is the primary signal used here --
 simpler than what Claude Desktop needed, since ChatGPT doesn't require any
-message-tree scanning or text-content reading at all.
+message-tree scanning or text-content reading at all. thinking_started/
+thinking_ended are not applicable (no observed equivalent of
+extended-thinking mode) and are always reported False.
 
-Known gap: unlike Claude Desktop, there's no confirmed structural signal
-for "waiting on an interactive clarifying question" -- if ChatGPT asks a
-follow-up question, it likely does so as plain response text, which just
-looks like a normal finished turn here. thinking_started/thinking_ended
-are also not applicable (no observed equivalent of extended-thinking mode)
-and are always reported False.
+Interactive clarifying questions ARE structurally detectable, just not via
+the Send/Stop toggle: ChatGPT renders them as a distinct widget (a
+GroupBox named after the question, choice buttons, and -- the reliable
+part -- an Edit control titled "Custom answer for <question text>"),
+confirmed via inspect_window.py against a real "Where are you going?"
+prompt. That Edit control's title PREFIX is question-agnostic and is what
+QUESTION_EDIT_TITLE_RE below matches. Without this, the Stop button
+reverting to Send while ChatGPT is just waiting on you (not actually
+finished) was indistinguishable from a real finish -- see poll()'s
+awaiting_answer hold, same "hold until it clears" shape as Claude
+Desktop's is_question_hint handling.
 
 See chat_backend.py for the interface this implements.
 """
@@ -28,6 +35,10 @@ from pywinauto import Desktop
 
 from chat_backend import ChatBackend
 
+# Matches "Custom answer for Where are you going?", "Custom answer for
+# What's your budget?", etc. -- see module docstring.
+QUESTION_EDIT_TITLE_RE = r"^Custom answer for .*"
+
 
 class ChatGPTDesktopBackend(ChatBackend):
     name = "chatgpt_desktop"
@@ -35,12 +46,14 @@ class ChatGPTDesktopBackend(ChatBackend):
     def __init__(self):
         self.win = None
         self.armed = False  # True while a response is actively generating
+        self.awaiting_answer = False  # True while an interactive question is up, unanswered
 
     # -- ChatBackend interface --------------------------------------------
 
     def connect(self):
         self.win = self._get_window()
         self.armed = False
+        self.awaiting_answer = False
         print("Watching ChatGPT Desktop (Chat mode). Type a prompt directly in the app.")
 
     def try_connect(self) -> bool:
@@ -56,6 +69,7 @@ class ChatGPTDesktopBackend(ChatBackend):
             return False
         self.win = win
         self.armed = False
+        self.awaiting_answer = False
         return True
 
     def check_alive(self):
@@ -70,6 +84,31 @@ class ChatGPTDesktopBackend(ChatBackend):
             "thinking_ended": False,
             "finished": False,
         }
+
+        question_present = self._question_present()
+
+        if debug:
+            print(f"[debug] armed={self.armed} awaiting_answer={self.awaiting_answer} question_present={question_present}")
+
+        if question_present and not self.awaiting_answer:
+            result["question_started"] = True
+            self.awaiting_answer = True
+            # Not "generating" while it's sitting there waiting on you --
+            # the Stop button is gone during this too, and without clearing
+            # armed here the hold-exit below would immediately misread that
+            # as a real finish the moment the question first appears.
+            self.armed = False
+            return result
+
+        if self.awaiting_answer:
+            # Hold here entirely -- skip Stop-button/finished detection
+            # below -- until the question widget actually clears, meaning
+            # you picked an option or typed a custom answer. Same shape as
+            # Claude Desktop's is_question_hint hold in claude_desktop_backend.py.
+            if not question_present:
+                result["answer_received"] = True
+                self.awaiting_answer = False
+            return result
 
         stop_present = self._button_exists("Stop")
 
@@ -86,6 +125,16 @@ class ChatGPTDesktopBackend(ChatBackend):
         return result
 
     # -- internal helpers --------------------------------------------------
+
+    def _question_present(self):
+        # Same instant-return .exists() approach as _button_exists -- see
+        # its comment for why .wrapper_object() must never be used here.
+        try:
+            return self.win.child_window(
+                title_re=QUESTION_EDIT_TITLE_RE, control_type="Edit"
+            ).exists(timeout=0.1, retry_interval=0.1)
+        except Exception:
+            return False
 
     def _button_exists(self, title):
         # NOTE: do NOT use .wrapper_object() here -- when the element is

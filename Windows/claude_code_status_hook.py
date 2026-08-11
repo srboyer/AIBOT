@@ -35,9 +35,15 @@ back to "unknown" rather than being dropped.
 Registration (~/.claude/settings.json), one identical command for every
 event listed above -- the payload's own "hook_event_name" field is what
 tells this script which one just fired, so there's no need for a different
-command per event:
+command per event. In the packaged product this file is built into
+ClaudeCodeHook.exe (see ClaudeCodeHook.spec) and that exe path is what
+gets registered directly, via claude_code_hook_installer.py:
 
-    py -3.11 "<path to this file>"
+    "<path to>\ClaudeCodeHook.exe"
+
+(A dev checkout without the exe built can still register this .py file
+directly with a "py -3.11 <path>" command -- claude_code_hook_installer.py
+recognizes either form as its own entry.)
 
 SILENT BY DESIGN -- this must never print anything or exit non-zero: it
 runs inline in Claude Code's own event path, and hook stdout/exit codes can

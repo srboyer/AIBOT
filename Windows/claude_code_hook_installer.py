@@ -17,13 +17,15 @@ Why this needs to be careful, not just "write the file":
   broken forever -- see claude_code_status_hook.py's "SILENT BY DESIGN"
   note, failures here never surface to the customer on their own.
 
-How "is this our entry" is decided: by checking whether
-claude_code_status_hook.py appears in the command string, NOT by exact
+How "is this our entry" is decided: by checking whether ClaudeCodeHook.exe
+(or, for a customer upgrading from before the hook was packaged as an exe,
+claude_code_status_hook.py) appears in the command string, NOT by exact
 string match against the full command -- that's what lets an upgrade that
-moves the install path find and update its own prior entry in place,
-while any of the customer's own unrelated hooks (which will never contain
-that filename) are left completely untouched no matter what they look
-like.
+moves the install path, or that moves a customer off the old "py -3.11
+<script>.py" invocation onto the packaged exe, find and update its own
+prior entry in place, while any of the customer's own unrelated hooks
+(which will never contain either name) are left completely untouched no
+matter what they look like.
 
 Registers against every event claude_code_status_hook.py's own docstring
 lists: SessionStart, SessionEnd, UserPromptSubmit, PreToolUse, PostToolUse,
@@ -35,6 +37,11 @@ settings.json shape.
 import json
 import os
 
+HOOK_EXE_NAME = "ClaudeCodeHook.exe"
+# Legacy marker: what the registered command looked like before the hook
+# script got packaged as an exe (see ClaudeCodeHook.spec). Kept only so
+# _is_ours() still recognizes -- and upgrades in place -- a hook entry
+# registered by an older version of this installer.
 HOOK_SCRIPT_NAME = "claude_code_status_hook.py"
 
 # (event name, matcher or None) -- order matches claude_code_status_hook.py's
@@ -54,20 +61,23 @@ def default_settings_path() -> str:
     return os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
 
 
-def default_hook_script_path() -> str:
+def default_hook_exe_path() -> str:
     # Co-located with this installer -- in the packaged product both files
     # ship in the same install directory.
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), HOOK_SCRIPT_NAME)
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), HOOK_EXE_NAME)
 
 
-def build_hook_command(hook_script_path: str, python_launcher: str = "py -3.11") -> str:
-    # Quoted path -- install directories containing spaces (e.g. "Program
-    # Files") would otherwise break the command when Claude Code invokes it.
-    return f'{python_launcher} "{hook_script_path}"'
+def build_hook_command(hook_exe_path: str) -> str:
+    # Just the quoted exe path -- no "py -3.11" launcher needed since
+    # ClaudeCodeHook.exe is a standalone PyInstaller build (see
+    # ClaudeCodeHook.spec). Quoting matters because install directories
+    # containing spaces (e.g. "Program Files") would otherwise break the
+    # command when Claude Code invokes it.
+    return f'"{hook_exe_path}"'
 
 
 def _is_ours(command: str) -> bool:
-    return HOOK_SCRIPT_NAME in command
+    return HOOK_EXE_NAME in command or HOOK_SCRIPT_NAME in command
 
 
 def merge_hooks(settings: dict, hook_command: str) -> tuple[dict, bool]:
@@ -108,13 +118,13 @@ def merge_hooks(settings: dict, hook_command: str) -> tuple[dict, bool]:
     return settings, changed
 
 
-def install(settings_path: str = None, hook_script_path: str = None, python_launcher: str = "py -3.11") -> bool:
+def install(settings_path: str = None, hook_exe_path: str = None) -> bool:
     """Reads, merges, and writes back settings.json. Returns True if the
     file was actually changed (False means it was already correctly
     registered -- a normal, expected outcome on a repeat run)."""
     settings_path = settings_path or default_settings_path()
-    hook_script_path = hook_script_path or default_hook_script_path()
-    hook_command = build_hook_command(hook_script_path, python_launcher)
+    hook_exe_path = hook_exe_path or default_hook_exe_path()
+    hook_command = build_hook_command(hook_exe_path)
 
     try:
         with open(settings_path, "r", encoding="utf-8") as f:
@@ -149,7 +159,7 @@ if __name__ == "__main__":
                 before = json.load(f)
         except FileNotFoundError:
             before = {}
-        after, changed = merge_hooks(before, build_hook_command(default_hook_script_path()))
+        after, changed = merge_hooks(before, build_hook_command(default_hook_exe_path()))
         print(f"Would change {settings_path}: {changed}")
         if changed:
             print(json.dumps(after, indent=2))

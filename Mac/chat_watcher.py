@@ -21,14 +21,21 @@ app never interrupts tracking of the others.
 To watch a different chatbot, write a new backend module and register it
 in BACKENDS below -- nothing else changes, including the firmware.
 
-Ported from the Windows version (Windows/chat_watcher.py) -- this file's
-own logic (BackendSlot, run_multi's merge/priority handling, run()) is
-100% platform-agnostic and unchanged. Only two things differ: no
-copilot_desktop entry in BACKENDS (Windows Copilot has no Mac
-equivalent), and the Windows Classic-BT-SPP light option is gone (that
-whole approach was Windows-COM-port-specific -- see
-claude_light_tracker.py's own history for why -- macOS just uses --ble,
-which already works unchanged via bleak's CoreBluetooth backend).
+Ported from the Windows version (Windows/chat_watcher.py) -- the core
+logic (BackendSlot, run_multi's merge/priority handling, run()) is
+platform-agnostic and carried over as-is. What differs:
+  - BACKENDS only registers claude_code so far (see the comment above
+    BACKENDS for why the other apps aren't there yet). No
+    copilot_desktop either way -- Windows Copilot has no Mac equivalent.
+  - --backend all always uses multi-app mode, even with only one
+    backend registered, so the default keeps run_multi's BLE-drop
+    resilience instead of falling into the single-app run() path.
+  - run_multi skips, rather than crashes on, a registered backend whose
+    module can't be imported on this machine.
+  - The Windows Classic-BT-SPP light option is gone (that whole approach
+    was Windows-COM-port-specific -- see claude_light_tracker.py's own
+    history for why -- macOS just uses --ble, which already works
+    unchanged via bleak's CoreBluetooth backend).
 
 Setup:
     pip3 install pyobjc bleak
@@ -38,8 +45,8 @@ Setup:
 
 Usage:
     python3 chat_watcher.py --ble                          (watch everything)
-    python3 chat_watcher.py --backend claude_desktop --ble (single app, old behavior)
-    python3 chat_watcher.py --backend chatgpt_desktop --port /dev/tty.usbserial-0001
+    python3 chat_watcher.py --backend claude_code --ble    (single app, old behavior)
+    python3 chat_watcher.py --backend claude_code --port /dev/tty.usbserial-0001
     python3 chat_watcher.py                                (console only)
 """
 
@@ -61,11 +68,14 @@ POLL_INTERVAL = 1.0  # seconds between checks; raise this if it feels sluggish
 DONE_FLASH_SECONDS = 1.5  # how long the green DONE flash holds before returning to idle
 RECONNECT_INTERVAL = 5.0  # how often to re-try connecting to an app that isn't open
 
+# Only Claude Code is ported so far: it rides on Claude Code's own hook
+# system rather than UI automation, so it runs unchanged on macOS. The
+# Windows desktop/web backends (claude_desktop, chatgpt_desktop,
+# claude_web, chatgpt_web) are pywinauto-based and need rewriting against
+# macOS Accessibility (AXUIElement via pyobjc -- see mac_inspect_app.py)
+# before they can be registered here. Listing them before their modules
+# existed crashed the default --backend all at startup.
 BACKENDS = {
-    "claude_desktop": "claude_desktop_backend.ClaudeDesktopBackend",
-    "chatgpt_desktop": "chatgpt_desktop_backend.ChatGPTDesktopBackend",
-    "claude_web": "claude_web_backend.ClaudeWebBackend",
-    "chatgpt_web": "chatgpt_web_backend.ChatGPTWebBackend",
     "claude_code": "claude_code_backend.ClaudeCodeBackend",
 }
 
@@ -193,7 +203,18 @@ def run_multi(backend_names, make_light, debug: bool = False):
     the current state the moment it's back. Previously a BLE drop restarted
     everything, so a question arriving during the outage was seen by the
     fresh backend and silently discarded."""
-    slots = [BackendSlot(name) for name in backend_names]
+    slots = []
+    for name in backend_names:
+        try:
+            slots.append(BackendSlot(name))
+        except ImportError as e:
+            # Registered but not importable on this machine (missing module,
+            # or a missing dependency like pywinauto) -- skip just this app
+            # rather than taking every other one down with it at startup.
+            print(f"[{name}] Skipped -- backend can't be loaded here ({e}).")
+    if not slots:
+        print("No backends could be loaded; nothing to watch.", file=sys.stderr)
+        sys.exit(1)
     light = None
     shown = None            # None forces a (re)send once a light exists
     next_light_attempt = 0.0
@@ -349,9 +370,11 @@ def main():
                 else:
                     return ConsoleLight()
 
-            if len(names) > 1:
+            if args.backend == "all" or len(names) > 1:
                 # Multi mode owns the light lifecycle itself (survives BLE
-                # drops without resetting tracking state).
+                # drops without resetting tracking state). "all" always
+                # takes this path, even with only one backend registered,
+                # so the default never falls back to single-app run().
                 run_multi(names, make_light, debug=args.debug)
             else:
                 light = make_light()

@@ -39,6 +39,11 @@ states as follows:
     Notification      -> question_started       (QUESTION -- but only for
                          notification_type != "idle_prompt"; see caveat
                          below)
+    Notification "idle_prompt" while a turn is in progress
+                      -> finished               (DONE -- Claude Code is
+                         waiting for your input, so the turn is over even
+                         though no Stop fired; see INTERRUPTED/REJECTED
+                         TURNS below)
     Stop               -> finished               (DONE)
     SessionStart/SessionEnd -> connection lifecycle only, no state of their
                          own (see check_alive via SessionEnd below)
@@ -92,13 +97,24 @@ Two mitigations, in order of how much they cover:
      above -- no timeout needed for that case.
   2. The one gap PostToolUse can't cover is interrupting Claude mid plain-
      text response with NO tool involved at all -- genuinely zero hook
-     fires there. poll() below falls back to a staleness timeout
-     (STALE_AFTER_SECONDS) for exactly that case: if the backend is
-     "busy" (a turn is presumed in progress) and NOTHING has arrived for
-     that long, it synthesizes a `finished` event itself. This is a
-     last-resort heuristic, not a real signal -- it deliberately does NOT
-     apply while awaiting_answer (QUESTION), since sitting on a permission
-     prompt for a while is normal, not stuck.
+     fires there. What DOES follow is Claude Code's own idle nudge: once
+     the prompt input has sat idle for ~60s it fires Notification with
+     notification_type "idle_prompt" ("Claude is waiting for your
+     input"). That only happens once Claude is actually waiting on you,
+     so poll() treats an idle_prompt arriving while busy as the turn's
+     end (-> finished). Like the old timer it replaced, it deliberately
+     does NOT apply while awaiting_answer (QUESTION): sitting on a
+     permission prompt is normal, not finished.
+
+  This used to be a blind 90s staleness timer -- "busy and no hook event
+  for 90s -> assume finished". That was a real, observed bug: hooks also go
+  silent during perfectly normal long work (a tool call running over 90s,
+  e.g. a firmware compile, or a long response with no tool calls), so the
+  light dropped to DONE mid-turn at ~1m40s while Claude was still working.
+  idle_prompt can't misfire that way. A timer remains only as a last-resort
+  safety net (STALE_AFTER_SECONDS, now 30 minutes) for a session that dies
+  without firing anything at all -- far longer than any real silent stretch
+  (Claude Code's own Bash tool caps at 10 minutes).
 """
 
 import json
@@ -118,12 +134,11 @@ EMPTY_RESULT = {
     "finished": False,
 }
 
-# See "INTERRUPTED/REJECTED TURNS" above -- last-resort fallback for a turn
-# that ended with literally no hook event at all (Escape during plain-text
-# generation, no tool in flight). Generous on purpose: it only needs to be
-# short enough that a truly abandoned light doesn't stay wrong forever, not
-# short enough to race a normal response.
-STALE_AFTER_SECONDS = 90.0
+# See "INTERRUPTED/REJECTED TURNS" above. Silent turns normally end via the
+# idle_prompt notification; this is only the safety net for a session that
+# dies without firing anything at all. It must be far longer than any real
+# silent stretch -- at 90s it cut genuine long tool calls short.
+STALE_AFTER_SECONDS = 30 * 60.0
 
 
 class ClaudeCodeBackend(ChatBackend):
@@ -186,18 +201,17 @@ class ClaudeCodeBackend(ChatBackend):
 
         mtime = self._mtime()
         if mtime <= self.last_mtime:
-            # No new hook event this tick. Still worth checking whether
-            # we've gone stale -- an Escape mid plain-text response (no
-            # tool in flight) leaves NO hook trace at all, so this is the
-            # only remaining signal that a "busy" turn is actually over.
-            # Deliberately skipped while awaiting_answer: sitting on a
-            # permission prompt for a while is normal, not stuck.
+            # No new hook event this tick. Silent turns normally end via
+            # idle_prompt (below); this is only the safety net for a
+            # session that died without firing anything -- see
+            # STALE_AFTER_SECONDS. Skipped while awaiting_answer: sitting on
+            # a permission prompt is normal, not stuck.
             if (self.busy and not self.awaiting_answer
                     and (time.monotonic() - self.last_event_at) > STALE_AFTER_SECONDS):
                 if debug:
                     print(f"[debug] claude_code: no event for "
                           f">{STALE_AFTER_SECONDS:.0f}s while busy -- assuming "
-                          f"the turn ended silently (interrupted?) -> DONE")
+                          f"the session died -> DONE")
                 result["finished"] = True
                 self.busy = False
             return result
@@ -273,6 +287,16 @@ class ClaudeCodeBackend(ChatBackend):
                 result["question_started"] = True
                 self.awaiting_answer = True
                 self.busy = True
+            elif self.busy:
+                # idle_prompt mid-turn: Claude Code is waiting for input, so
+                # the turn ended without a Stop (Escape mid-response, a
+                # rejected tool call). This is the turn's real end signal --
+                # see INTERRUPTED/REJECTED TURNS above.
+                if debug:
+                    print("[debug] claude_code: idle_prompt while busy -- "
+                          "turn ended without a Stop -> DONE")
+                result["finished"] = True
+                self.busy = False
         elif event == "Stop":
             result["finished"] = True
             self.busy = False

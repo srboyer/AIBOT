@@ -53,7 +53,7 @@ DONE_FLASH_SECONDS = 1.5  # how long the green DONE flash holds before returning
 RECONNECT_INTERVAL = 5.0  # how often to re-try connecting to an app that isn't open
 
 BACKENDS = {
-    "claude_desktop": "claude_desktop_backend.ClaudeDesktopBackend",
+    "claude_desktop": "claude_desktop_chat_backend.ClaudeDesktopChatBackend",
     "chatgpt_desktop": "chatgpt_desktop_backend.ChatGPTDesktopBackend",
     "claude_web": "claude_web_backend.ClaudeWebBackend",
     "chatgpt_web": "chatgpt_web_backend.ChatGPTWebBackend",

@@ -15,7 +15,8 @@
 from PyInstaller.utils.hooks import collect_submodules
 
 backend_modules = [
-    'claude_desktop_backend',
+    'claude_desktop_chat_backend',
+    'claude_desktop_backend',  # still imported by claude_web_backend
     'chatgpt_desktop_backend',
     'claude_web_backend',
     'chatgpt_web_backend',

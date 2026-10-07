@@ -38,6 +38,14 @@
   from where it was hit -- everything under the waves bends and shimmers --
   while the eyes wince and get knocked away from the hit.
 
+  Moods. Keep tapping and MAICA gets angrier: the idle green bleeds toward
+  red from each hit, the top lids slant down, an anger mark throbs, and at
+  full anger the eyes tremble; left alone it calms back down. Idle with
+  nothing happening for a few minutes it gets bored (half-lidded, eyes
+  drifting, a duller green); after half an hour it falls asleep (eyes shut,
+  night falling over the screen, Zs). Any status change, tap or pick-up
+  wakes it.
+
   Rendering: every shape is a signed distance field (negative inside,
   positive outside), so edges are anti-aliased over one pixel. Any pixel can
   be computed on its own, so the sketch streams rows to the panel with no
@@ -71,7 +79,7 @@ const float GLINT_X = -0.30f, GLINT_Y = -0.38f, GLINT_R = 0.20f, GLINT_LIGHT = 0
 
 // Colour wipes: the bright seam glows this far either side of the front.
 const float SEAM_PX = 10.0f;
-const int MAX_WIPES = 4;
+const int MAX_WIPES = 6;
 
 // The eyes breathe: +-1.5% size and a gentle float.
 const float BREATH_SCALE = 0.015f, BREATH_FLOAT_PX = 1.2f;
@@ -149,6 +157,50 @@ const uint32_t RIPPLE_MS = 1300;
 const int MAX_RIPPLES = 3, RIPPLE_LUT = 65;
 const uint32_t FLINCH_MS = 320;
 const float FLINCH_LID = 0.15f, POKE_KICK = 280.0f;
+
+// ---- Moods ----
+//
+// Anger: every tap adds a point. From the second point on, the idle colour
+// heads from green through yellow and orange to ANGRY_* red, reaching it at
+// ANGER_FULL points, bleeding out from where MAICA was hit; the top lids
+// slant down toward the nose; from about the fourth tap an anger mark
+// throbs in the top-left corner; at full anger the eyes tremble. Left alone
+// for ANGER_COOL_MS, it calms a point every ANGER_CALM_MS.
+const float ANGRY_R = 235 / 255.0f, ANGRY_G = 40 / 255.0f, ANGRY_B = 30 / 255.0f;
+const float ANGER_FULL = 6;
+const uint32_t ANGER_COOL_MS = 12000, ANGER_CALM_MS = 4000;
+const float ANGER_LID_DROP = 0.32f, ANGER_SLANT = 0.5f;  // top lids at full anger
+// The anger mark: four short curved strokes around a point, each bowing in
+// toward it -- arcs of radius VEIN_ARC_R centred VEIN_ARC_OFF out along the
+// diagonals, VEIN_ARC_HALF_ANGLE either side of their middle -- drawn at
+// VEIN_SCALE and throbbing.
+const float VEIN_X = 40.0f, VEIN_Y = 42.0f, VEIN_SCALE = 1.6f;
+const float VEIN_ARC_R = 10.0f, VEIN_ARC_OFF = 18.0f, VEIN_ARC_HALF_ANGLE = 0.5f, VEIN_ARC_HW = 2.0f;
+const float VEIN_EXTENT = 14.0f;  // local half-size that holds all four strokes
+const uint32_t VEIN_THROB_MS = 650;
+
+// Bored and asleep: with nothing happening -- no status change, tap or
+// tilt -- for FACE_BORED_AFTER_S MAICA gets bored: lids half down, eyes
+// drifting off to the side, a duller green. After FACE_SLEEP_AFTER_S it
+// falls asleep: eyes droop shut, night falls from the top of the screen,
+// and Zs float up. Any activity wakes it. (The sketch may set both before
+// including this file.)
+#ifndef FACE_BORED_AFTER_S
+#define FACE_BORED_AFTER_S 300
+#endif
+#ifndef FACE_SLEEP_AFTER_S
+#define FACE_SLEEP_AFTER_S 1800
+#endif
+const float BORED_R = 85 / 255.0f, BORED_G = 175 / 255.0f, BORED_B = 105 / 255.0f;
+const float NIGHT_R = 30 / 255.0f, NIGHT_G = 40 / 255.0f, NIGHT_B = 105 / 255.0f;
+const float BORED_LID_DROP = 0.45f;
+const float BORED_IN_S = 2.5f, SLEEP_IN_S = 4.0f, WAKE_S = 0.35f;  // how fast the looks come and go
+const float WAKE_MOTION_PX_S = 90.0f;   // eyes falling this fast (MAICA picked up) count as activity
+// The Zs: three, each floating from Z_FROM to Z_TO over Z_MS, growing and
+// fading, a third of the way apart.
+const float Z_FROM_X = 172.0f, Z_FROM_Y = 100.0f, Z_TO_X = 216.0f, Z_TO_Y = 26.0f;
+const uint32_t Z_MS = 3000;
+const float Z_HALF = 7.0f, Z_STROKE = 2.0f, Z_LIGHT = 0.85f;
 
 // ---- Small helpers ----------------------------------------------------------
 
@@ -248,6 +300,42 @@ FACE_HOT float sdExclaim(float lx, float ly) {
   return bar < dot ? bar : dot;
 }
 
+// The anger mark, in its own units (see VEIN_* above). Each stroke is an arc
+// (Inigo Quilez's sdArc) turned so its middle faces the mark's centre.
+const float VEIN_S = sinf(VEIN_ARC_HALF_ANGLE), VEIN_C = cosf(VEIN_ARC_HALF_ANGLE);
+template <float (*SQ)(float)>
+FACE_HOT float sdVein(float lx, float ly) {
+  float d = 1e9f;
+  for (int i = 0; i < 4; i++) {
+    float ux = (i & 1) ? 0.70710678f : -0.70710678f, uy = (i & 2) ? 0.70710678f : -0.70710678f;
+    float qx = lx - ux * VEIN_ARC_OFF, qy = ly - uy * VEIN_ARC_OFF;
+    float py = -(qx * ux + qy * uy), px = fabsf(-qx * uy + qy * ux);  // arc frame: middle on +y
+    float da;
+    if (VEIN_C * px > VEIN_S * py) {
+      float ex = px - VEIN_S * VEIN_ARC_R, ey = py - VEIN_C * VEIN_ARC_R;
+      da = SQ(ex * ex + ey * ey);
+    } else {
+      da = fabsf(SQ(px * px + py * py) - VEIN_ARC_R);
+    }
+    if (da < d) d = da;
+  }
+  return d - VEIN_ARC_HW;
+}
+
+// A "Z", in its own units: top bar, diagonal, bottom bar, Z_HALF either way.
+template <float (*SQ)(float)>
+FACE_HOT float sdZ(float x, float y) {
+  const float w = Z_HALF;
+  float bx = fabsf(x) - w;
+  if (bx < 0) bx = 0;
+  float top = (y + w) * (y + w), bottom = (y - w) * (y - w);
+  float bars = (top < bottom ? top : bottom) + bx * bx;
+  float h = clamp01((-(x - w) + (y + w)) / (4 * w));  // along the diagonal from (w, -w) to (-w, w)
+  float dx = x - w + 2 * w * h, dy = y + w - 2 * w * h;
+  float diag = dx * dx + dy * dy;
+  return SQ(bars < diag ? bars : diag) - Z_STROKE;
+}
+
 // ---- Pose: everything about the eyes that animates --------------------------
 
 struct Pose {
@@ -260,6 +348,8 @@ struct Pose {
   float dots;                 // thought bubbles, 0..1
   float mark, markPop;        // the "!": visibility 0..1, size multiplier
   float shake, beat;          // its attention shake: swing -1..1, and how far into a shake 0..1..0
+  float lidDrop, lidSlant;    // top lids: how far down (0..1), and slant down toward the nose (radians)
+  float vein, zs;             // the anger mark and the sleeping Zs: visibility 0..1
 };
 
 // ---- Frame: what one frame draws, precomputed for rendering ----------------
@@ -283,6 +373,9 @@ struct EyeGeo {
   float H0, lidH;            // half-height on screen; the eyelids' opening (H0 = wide open)
   float carveOff, carveR;    // circle that carves the eye into a happy arch from below
   float gx, gy, gr, gvis;    // glint offset, radius, visibility
+  bool topOn;                // a top lid cuts across: its height at the eye's middle,
+  float topY, slTan, slCos;  // its slant (tan, cos), and which way the nose is (+1 right, -1 left)
+  float inner;
   Rect box;
 };
 
@@ -293,7 +386,7 @@ struct Region {
   bool ring;
   float ox, oy, r0, r1;
 };
-const int MAX_REGIONS = 4 + MAX_WIPES + MAX_RIPPLES + 1;
+const int MAX_REGIONS = 6 + MAX_WIPES + MAX_RIPPLES + 1;
 
 // A ripple as drawn this frame: centre, radius of its leading wave, the
 // squared radii between which its waves are, and its strength.
@@ -309,6 +402,10 @@ struct Frame {
   Rect dotsBox;
   float markX, markY, markCos, markSin, markScale, markInvScale, markK;
   Rect markBox;
+  float veinK, veinScale, veinInv;
+  Rect veinBox;
+  float zK, zX[3], zY[3], zInv[3], zS[3], zA[3];
+  Rect zsBox;
   int nRipples;
   RippleGeo ripples[MAX_RIPPLES];
   float rippleDisp[RIPPLE_LUT], rippleLight[RIPPLE_LUT];  // one wave packet, unit strength
@@ -352,6 +449,11 @@ inline void Frame::prepare(const Pose &p, float open, float breathe, float float
     e.gy = GLINT_Y * hh;
     e.gr = clampf(GLINT_R * m, 2.5f, 8.0f);
     e.gvis = clamp01((m - 12) / 10);
+    e.topOn = p.lidDrop > 0.001f || fabsf(p.lidSlant) > 0.001f;
+    e.topY = -hh + 2 * hh * clamp01(p.lidDrop);
+    e.slTan = tanf(p.lidSlant);
+    e.slCos = cosf(p.lidSlant);
+    e.inner = i == 0 ? 1.0f : -1.0f;
     e.box = boxAround(e.cx - hw, e.cy - hh, e.cx + hw, e.cy + hh, 2);
   }
 
@@ -390,6 +492,31 @@ inline void Frame::prepare(const Pose &p, float open, float breathe, float float
     by0 = minf(by0, qy); by1 = maxf(by1, qy);
   }
   markBox = markK > 0.001f ? boxAround(bx0, by0, bx1, by1, 2) : Rect{0, 0, 0, 0};
+
+  // The anger mark grows in as it appears, and throbs.
+  veinK = clamp01(p.vein);
+  float throb = sinf(TAU * (now % VEIN_THROB_MS) / VEIN_THROB_MS);
+  throb = throb > 0 ? throb * throb : 0;
+  veinScale = VEIN_SCALE * (0.5f + 0.5f * veinK) * (1 + 0.15f * throb);
+  veinInv = 1.0f / veinScale;
+  float vr = VEIN_EXTENT * veinScale;
+  veinBox = veinK > 0.001f ? boxAround(VEIN_X - vr, VEIN_Y - vr, VEIN_X + vr, VEIN_Y + vr, 2) : Rect{0, 0, 0, 0};
+
+  // The Zs drift up and to the right, growing, a third of a cycle apart.
+  zK = clamp01(p.zs);
+  float zx0 = 1e9f, zy0 = 1e9f, zx1 = -1e9f, zy1 = -1e9f;
+  for (int k = 0; k < 3; k++) {
+    float u = (float)((now + k * (Z_MS / 3)) % Z_MS) / Z_MS;
+    zS[k] = 0.45f + 0.65f * u;
+    zInv[k] = 1.0f / zS[k];
+    zX[k] = lerpf(Z_FROM_X, Z_TO_X, u) + 4 * sinf(TAU * u * 1.5f + k);
+    zY[k] = lerpf(Z_FROM_Y, Z_TO_Y, u);
+    zA[k] = zK * smooth(u / 0.15f) * (1 - smooth((u - 0.7f) / 0.3f));
+    float h = (Z_HALF + Z_STROKE) * zS[k];
+    zx0 = minf(zx0, zX[k] - h); zx1 = maxf(zx1, zX[k] + h);
+    zy0 = minf(zy0, zY[k] - h); zy1 = maxf(zy1, zY[k] + h);
+  }
+  zsBox = zK > 0.001f ? boxAround(zx0, zy0, zx1, zy1, 2) : Rect{0, 0, 0, 0};
 }
 
 inline uint16_t rgb565(float r, float g, float b) {
@@ -450,6 +577,7 @@ FACE_HOT float eyeCover(const EyeGeo &e, float happy, float x, float y, float *g
   float lx = (vx * e.c + vy * e.s) * e.isx, ly = (-vx * e.s + vy * e.c) * e.isy;
   float d = sdRoundBox<SQ>(lx, ly, e.ew, e.eh, e.er) * e.dscale;
   if (e.lidH < e.H0) d = maxf(d, fabsf(vy) - e.lidH);  // eyelids, closing from top and bottom
+  if (e.topOn) d = maxf(d, (e.topY + e.slTan * vx * e.inner - vy) * e.slCos);  // top lid: bored, angry
   if (happy > 0.001f) {
     float cy = vy - e.carveOff;
     d = maxf(d, e.carveR - SQ(vx * vx + cy * cy));
@@ -502,7 +630,7 @@ FACE_HOT bool inBox(const Rect &b, float x, float y) { return x >= b.x0 && x < b
 // found, the reference all.
 template <float (*SQ)(float)>
 FACE_HOT uint16_t shadePixel(const Frame &f, float x, float y, float sx, float sy, float light, int eyeMask,
-                             bool dotsOn, bool markOn, bool linkOn) {
+                             bool dotsOn, bool markOn, bool veinOn, bool zOn, bool linkOn) {
   float r, g, b;
   background<SQ>(f, sx, sy, &r, &g, &b);
   float cr = r, cg = g, cb = b;
@@ -528,7 +656,24 @@ FACE_HOT uint16_t shadePixel(const Frame &f, float x, float y, float sx, float s
     }
   }
   if (markOn) k = maxf(k, clamp01(0.5f - markDistance<SQ>(f, sx, sy)) * f.markK);
+  if (veinOn) {
+    float dv = sdVein<SQ>((sx - VEIN_X) * f.veinInv, (sy - VEIN_Y) * f.veinInv) * f.veinScale;
+    k = maxf(k, clamp01(0.5f - dv) * f.veinK);
+  }
   if (k > 0) { cr += (kr - cr) * k; cg += (kg - cg) * k; cb += (kb - cb) * k; }
+  if (zOn) {  // the Zs are light
+    float z = 0;
+    for (int i = 0; i < 3; i++) {
+      if (f.zA[i] <= 0) continue;
+      float dz = sdZ<SQ>((sx - f.zX[i]) * f.zInv[i], (sy - f.zY[i]) * f.zInv[i]) * f.zS[i];
+      z = maxf(z, clamp01(0.5f - dz) * f.zA[i]);
+    }
+    if (z > 0) {
+      cr += (r + (1 - r) * Z_LIGHT - cr) * z;
+      cg += (g + (1 - g) * Z_LIGHT - cg) * z;
+      cb += (b + (1 - b) * Z_LIGHT - cb) * z;
+    }
+  }
   if (light > 0) {
     cr += (1 - cr) * light; cg += (1 - cg) * light; cb += (1 - cb) * light;
   } else if (light < 0) {
@@ -548,7 +693,8 @@ FACE_HOT uint16_t shadePixel(const Frame &f, float x, float y, float sx, float s
 inline uint16_t pixel(int ix, int iy, const Frame &f, bool linkDot) {
   float x = ix + 0.5f, y = iy + 0.5f, sx = x, sy = y, light = 0;
   if (f.nRipples) rippleAt<sqrtRef>(f, x, y, &sx, &sy, &light);
-  return shadePixel<sqrtRef>(f, x, y, sx, sy, light, 3, f.dots > 0.001f, f.markK > 0.001f, linkDot);
+  return shadePixel<sqrtRef>(f, x, y, sx, sy, light, 3, f.dots > 0.001f, f.markK > 0.001f, f.veinK > 0.001f,
+                            f.zK > 0.001f, linkDot);
 }
 
 // Fast path, what the sketch runs: pixels [x0, x1) of row iy into
@@ -564,7 +710,8 @@ inline void renderRow(uint16_t *out, int x0, int x1, int iy, const Frame &f, boo
     int mask = (inBox(f.eye[0].box, sx, sy) ? 1 : 0) | (inBox(f.eye[1].box, sx, sy) ? 2 : 0);
     bool linkOn = linkRow && ix >= LINK_BOX.x0 && ix < LINK_BOX.x1;
     out[ix - x0] = shadePixel<fsqrt>(f, x, y, sx, sy, light, mask, inBox(f.dotsBox, sx, sy),
-                                     inBox(f.markBox, sx, sy), linkOn);
+                                     inBox(f.markBox, sx, sy), inBox(f.veinBox, sx, sy),
+                                     inBox(f.zsBox, sx, sy), linkOn);
   }
 }
 
@@ -596,6 +743,17 @@ inline int rowSpans(const Region &g, int y, int *xs) {
 }
 
 // ---- Animation ------------------------------------------------------------
+
+// Colour blend that keeps brightness: a plain blend of two saturated colours
+// dips toward a dull grey halfway (green -> red would pass through brown;
+// this way it passes through yellow and orange).
+inline void mixRGB(float r1, float g1, float b1, float r2, float g2, float b2, float t, float *r, float *g,
+                   float *b) {
+  *r = lerpf(r1, r2, t); *g = lerpf(g1, g2, t); *b = lerpf(b1, b2, t);
+  float want = lerpf(maxf(r1, maxf(g1, b1)), maxf(r2, maxf(g2, b2)), t);
+  float have = maxf(*r, maxf(*g, *b));
+  if (have > 0.001f) { float k = want / have; *r *= k; *g *= k; *b *= k; }
+}
 
 inline const Shape &shapeOf(char st) {
   switch (st) {
@@ -629,6 +787,7 @@ class Engine {
   // screen right now.
   void setState(char st, uint32_t now, bool snap) {
     if (!snap && !first && st == state) return;
+    wake(now);
     // A wipe the interrupted transition hadn't started yet belongs to it.
     for (int i = 0; i < nWipes;)
       if ((int32_t)(wipes[i].start - now) > 0) removeWipes(i, 1); else i++;
@@ -640,7 +799,7 @@ class Engine {
       shown = rest(now);
       nWipes = 0;
       baseR = baseG = baseB = 0;
-      prevEye[0] = prevEye[1] = prevDots = prevMark = Rect{0, 0, 0, 0};
+      prevEye[0] = prevEye[1] = prevDots = prevMark = prevVein = prevZs = Rect{0, 0, 0, 0};
     }
     from = shown;
     t0 = now;
@@ -682,12 +841,22 @@ class Engine {
     if (kl > 1) { fallVX += kx / kl * POKE_KICK; fallVY += ky / kl * POKE_KICK; }
     flinching = true;
     flinchAt = now;
+    // Each tap makes MAICA a little angrier (and wakes it); while idle the
+    // new colour bleeds out from the hit along with the ripple.
+    angerPts = minf(angerPts + 1, ANGER_FULL);
+    lastTap = lastCalm = now;
+    wake(now);
+    recolour(WIPE_RADIAL, ox, oy, now, 650, false, 0.35f);
   }
+
+  // How asleep MAICA is, 0..1 (the sketch dims the backlight with it).
+  float sleepiness() const { return smooth(sleepW); }
 
   // Advance to time `now`; the result, including what to redraw, is in
   // frame(). Every frame must be drawn: the redraw regions are relative to
   // the previous one.
   void update(uint32_t now) {
+    updateMoods(now);
     Pose p = rest(now);
     if (moving) {
       float u = (float)(int32_t)(now - t0) / dur;
@@ -699,6 +868,11 @@ class Engine {
     // Tilt rides on top of everything else (and stays out of `shown`, so
     // transitions never have to undo it).
     fallEyes(now, p);
+    if (fabsf(fallVX) + fabsf(fallVY) > WAKE_MOTION_PX_S) {  // picked up or tilted: activity
+      bool wasAway = mood != AWAKE;
+      wake(now);
+      if (wasAway) recolour(WIPE_RADIAL, 120, 116, now, 700, false, 0.4f);
+    }
     Pose drawn = p;
     drawn.lx += fallX;
     drawn.ly += fallY;
@@ -715,6 +889,16 @@ class Engine {
     }
     drawn.sx *= 1 + 0.08f * wince;
     drawn.sy *= 1 - 0.12f * wince;
+
+    // Anger: top lids slant down toward the nose, the mark appears, and at
+    // full anger the eyes tremble.
+    float a = smooth(angerShown);
+    drawn.lidDrop = maxf(drawn.lidDrop, ANGER_LID_DROP * a);
+    drawn.lidSlant = ANGER_SLANT * a;
+    drawn.vein = smooth((angerShown - 0.45f) / 0.2f);
+    float tremble = smooth((angerShown - 0.85f) / 0.15f);
+    drawn.lx += 1.3f * tremble * sinf(now * 0.11f);
+    drawn.ly += 0.8f * tremble * sinf(now * 0.17f + 1);
     float open = minf(minf(blinkOpenness(now), p.lid), 1 - (1 - FLINCH_LID) * wince);
 
     float ph = TAU * (now % BREATH_MS) / BREATH_MS;
@@ -729,6 +913,10 @@ class Engine {
     prevDots = fr.dotsBox;
     addRegion(unite(fr.markBox, prevMark));
     prevMark = fr.markBox;
+    addRegion(unite(fr.veinBox, prevVein));
+    prevVein = fr.veinBox;
+    addRegion(unite(fr.zsBox, prevZs));
+    prevZs = fr.zsBox;
 
     // ...and each wipe's band between its front last frame and now. A wipe
     // that has covered the screen becomes the base colour, and anything
@@ -813,7 +1001,7 @@ class Engine {
   Wipe wipes[MAX_WIPES] = {};
   int nWipes = 0;
   float baseR = 0, baseG = 0, baseB = 0;
-  Rect prevEye[2] = {}, prevDots = {}, prevMark = {};
+  Rect prevEye[2] = {}, prevDots = {}, prevMark = {}, prevVein = {}, prevZs = {};
   Frame fr{};
   uint32_t rng = 0x9E3779B9u;
 
@@ -825,6 +1013,14 @@ class Engine {
   float gFromX = 0, gFromY = 0, gToX = 0, gToY = 0;
   uint32_t gStart = 0, nextSaccade = 0;
   bool gazeInit = false;
+
+  // moods
+  enum Mood { AWAKE, BORED, ASLEEP };
+  Mood mood = AWAKE;
+  float angerPts = 0, angerShown = 0;       // tap points; how angry the eyes look, 0..1
+  float boredW = 0, sleepW = 0;             // how far into looking bored / asleep, 0..1
+  uint32_t lastTap = 0, lastCalm = 0, lastActivity = 0, lastMood = 0;
+  bool moodInit = false;
 
   // taps
   struct Ripple { bool active; float ox, oy; uint32_t start; float R; };
@@ -882,13 +1078,21 @@ class Engine {
   // A wipe in the new status's colour, starting `at` and lasting `len`
   // (fractions of the transition).
   void addWipe(uint8_t kind, float ox, float oy, float at, float len, bool inOut, float hl) {
+    float r, g, b;
+    if (state == 'D') idleColour(&r, &g, &b);
+    else { const Shape &s = shapeOf(state); r = s.r; g = s.g; b = s.b; }
+    addWipeAt(kind, ox, oy, t0 + (uint32_t)(at * dur), (uint32_t)(len * dur), inOut, hl, r, g, b);
+  }
+
+  // A wipe bringing colour (r, g, b), starting at `start` and lasting `ms`.
+  void addWipeAt(uint8_t kind, float ox, float oy, uint32_t start, uint32_t ms, bool inOut, float hl, float r,
+                 float g, float b) {
     if (nWipes == MAX_WIPES) {
       // Too many changes at once: finish the oldest instantly.
       baseR = wipes[0].r; baseG = wipes[0].g; baseB = wipes[0].b;
       removeWipes(0, 1);
       fullRedraw = true;
     }
-    const Shape &s = shapeOf(state);
     Wipe &w = wipes[nWipes++];
     w.kind = kind;
     w.inOut = inOut;
@@ -897,10 +1101,9 @@ class Engine {
     const float cxs[4] = {0, 240, 0, 240}, cys[4] = {0, 0, 240, 240};
     for (int i = 0; i < 4; i++) reach = maxf(reach, sqrtf((cxs[i] - ox) * (cxs[i] - ox) + (cys[i] - oy) * (cys[i] - oy)));
     w.reach = reach + SEAM_PX + 2;
-    w.start = t0 + (uint32_t)(at * dur);
-    w.dur = (uint32_t)(len * dur);
-    if (w.dur == 0) w.dur = 1;
-    w.r = s.r; w.g = s.g; w.b = s.b;
+    w.start = start;
+    w.dur = ms ? ms : 1;
+    w.r = r; w.g = g; w.b = b;
     w.hl = hl;
     w.progress = 0;
     w.front = frontOf(w, 0);
@@ -960,6 +1163,73 @@ class Engine {
     }
   }
 
+  // ---- moods
+
+  // Something happened (a status change, a tap, being picked up): wide awake.
+  void wake(uint32_t now) {
+    lastActivity = now;
+    mood = AWAKE;
+  }
+
+  // The idle colour for the current mood and anger: green (duller when
+  // bored, night blue when asleep), heading for red with anger.
+  void idleColour(float *r, float *g, float *b) const {
+    float br = SHAPE_IDLE.r, bg = SHAPE_IDLE.g, bb = SHAPE_IDLE.b;
+    if (mood == BORED) { br = BORED_R; bg = BORED_G; bb = BORED_B; }
+    if (mood == ASLEEP) { br = NIGHT_R; bg = NIGHT_G; bb = NIGHT_B; }
+    mixRGB(br, bg, bb, ANGRY_R, ANGRY_G, ANGRY_B, clamp01((angerPts - 1) / (ANGER_FULL - 1)), r, g, b);
+  }
+
+  // While idle, wipe to the idle colour if the screen isn't already heading
+  // there (the newest wipe's colour, or the base). Other statuses keep their
+  // own colours; returning to idle picks up the right one.
+  void recolour(uint8_t kind, float ox, float oy, uint32_t now, uint32_t ms, bool inOut, float hl) {
+    if (state != 'D') return;
+    float r, g, b;
+    idleColour(&r, &g, &b);
+    float hr = baseR, hg = baseG, hb = baseB;
+    if (nWipes) { hr = wipes[nWipes - 1].r; hg = wipes[nWipes - 1].g; hb = wipes[nWipes - 1].b; }
+    if (fabsf(r - hr) + fabsf(g - hg) + fabsf(b - hb) < 0.01f) return;
+    addWipeAt(kind, ox, oy, now, ms, inOut, hl, r, g, b);
+  }
+
+  // Move w toward target at 1 per `seconds`.
+  static void approach(float *w, float target, float seconds, float dt) {
+    float step = dt / seconds;
+    *w += clampf(target - *w, -step, step);
+  }
+
+  void updateMoods(uint32_t now) {
+    float dt = moodInit ? clampf((int32_t)(now - lastMood) / 1000.0f, 0, 0.1f) : 0;
+    moodInit = true;
+    lastMood = now;
+
+    // Anger calms a point at a time once the taps stop.
+    if (angerPts > 0 && (int32_t)(now - lastTap) > (int32_t)ANGER_COOL_MS &&
+        (int32_t)(now - lastCalm) > (int32_t)ANGER_CALM_MS) {
+      angerPts = maxf(angerPts - 1, 0);
+      lastCalm = now;
+      recolour(WIPE_RADIAL, 120, 120, now, 1200, true, 0.2f);
+    }
+    float angerT = clamp01((angerPts - 1) / (ANGER_FULL - 1));
+    angerShown += (angerT - angerShown) * (1 - expf(-dt / 0.3f));
+
+    // Bored, then asleep, while idle with nothing happening.
+    if (state == 'D' && !moving) {
+      uint32_t idle = now - lastActivity;
+      if (mood == AWAKE && idle >= FACE_BORED_AFTER_S * 1000UL) {
+        mood = BORED;
+        recolour(WIPE_RADIAL, 120, 120, now, 2500, true, 0.1f);
+      }
+      if (mood == BORED && idle >= FACE_SLEEP_AFTER_S * 1000UL) {
+        mood = ASLEEP;
+        recolour(WIPE_RADIAL, 120, -60, now, 4000, true, 0.0f);  // night falls from the top
+      }
+    }
+    approach(&boredW, mood != AWAKE ? 1 : 0, mood != AWAKE ? BORED_IN_S : WAKE_S, dt);
+    approach(&sleepW, mood == ASLEEP ? 1 : 0, mood == ASLEEP ? SLEEP_IN_S : WAKE_S, dt);
+  }
+
   // ---- eyes
 
   void startBlink(uint32_t now) { blinking = true; blinkStart = now; }
@@ -1015,6 +1285,8 @@ class Engine {
     p.happy = 0;
     p.dots = 0;
     p.mark = 0; p.markPop = 1; p.shake = 0; p.beat = 0;
+    p.lidDrop = p.lidSlant = 0;
+    p.vein = p.zs = 0;
     if (state == 'A') {
       // Reading: the eyes sweep left to right, then flick back.
       const uint32_t P = 1900;
@@ -1035,6 +1307,16 @@ class Engine {
       p.shake = p.beat * sinf(TAU * (float)u / SHAKE_SWING_MS);
     } else {
       idleGaze(now, &p.lx, &p.ly);
+      // Bored: lids half down, eyes drifting slowly from side to side, low.
+      float b = smooth(boredW), z = smooth(sleepW);
+      p.lx = lerpf(p.lx, 12 * sinf(TAU * (now % 9000) / 9000.0f), b);
+      p.ly = lerpf(p.ly, 6, b);
+      p.lidDrop = BORED_LID_DROP * b;
+      // Asleep: eyes shut and resting low, Zs drifting up.
+      p.lid = 1 - 0.98f * z;
+      p.lx *= 1 - z;
+      p.ly += 6 * z;
+      p.zs = z;
     }
     return p;
   }
@@ -1057,6 +1339,8 @@ class Engine {
     p.ox = a.ox * settle; p.oy = a.oy * settle;
     p.lid = 1 + (a.lid - 1) * settle;
     p.happy = a.happy * settle;
+    p.lidDrop = lerpf(a.lidDrop, tgt.lidDrop, su);
+    p.zs = lerpf(a.zs, tgt.zs, su);
     p.dots = state == 'T' ? lerpf(a.dots, 1, smooth((u - 0.55f) / 0.35f)) : a.dots * (1 - smooth(u / 0.3f));
 
     if (appearing) {

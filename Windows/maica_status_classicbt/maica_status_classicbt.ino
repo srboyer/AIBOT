@@ -1,5 +1,16 @@
 /*
-  maica_status_classicbt.ino  --  v8 (MAICA PCB, ESP32-WROVER-E)
+  maica_status_classicbt.ino  --  v9 (MAICA PCB, ESP32-WROVER-E)
+
+  v9: moods. Keep tapping MAICA and it gets angrier: the idle green bleeds
+  toward red from each hit (through yellow and orange, red by the sixth tap
+  in a run), the top lids slant down, an anger mark throbs in the corner,
+  and at full anger the eyes tremble; left alone it calms back down over
+  half a minute or so. Idle with nothing happening for FACE_BORED_AFTER_S
+  (5 minutes) it gets bored -- half-lidded, eyes drifting, a duller green --
+  and after FACE_SLEEP_AFTER_S (30 minutes) it falls asleep: eyes shut,
+  night falls over the screen, Zs float up, and the backlight dims to
+  SLEEP_BACKLIGHT_DUTY. Any status change from the computer (sending a
+  prompt to an AI shows as ANALYZING), a tap, or picking MAICA up wakes it.
 
   v8: tilt MAICA and the eyes fall that way. The board's LIS2DW12
   accelerometer (I2C on IO21/IO22) is read 50 times a second; tilting left
@@ -113,6 +124,11 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
 #include <Wire.h>
+
+// Moods: how long MAICA can sit idle with nothing happening before it gets
+// bored, and before it falls asleep (seconds). Set before maica_face.h.
+#define FACE_BORED_AFTER_S  300
+#define FACE_SLEEP_AFTER_S 1800
 #include "maica_face.h"
 #include "maica_tilt.h"
 
@@ -138,6 +154,7 @@
 #define TFT_ROTATION   0          // 0-3: change to match how the screen is mounted
 #define TFT_SPI_HZ     40000000   // drop to 20000000 if the image is garbled or speckled
 #define BACKLIGHT_DUTY 255        // 0 (off) - 255 (full)
+#define SLEEP_BACKLIGHT_DUTY 50   // while MAICA sleeps (eases down as it nods off)
 
 // Face animation frame rate (target; frames that take longer just run back to
 // back). Lower it to save power.
@@ -458,7 +475,7 @@ void drawSplash() {
   tft.print("MAICA");
   tft.setTextSize(2);
   tft.setCursor(54, 105);           // 11 chars x 12px = 132px, centred
-  tft.print("firmware v8");
+  tft.print("firmware v9");
   tft.setTextColor(ST77XX_BLACK);
   tft.setCursor(12, 188);  tft.print("RED");
   tft.setCursor(92, 188);  tft.print("GRN");
@@ -494,7 +511,16 @@ void displayState(char state, bool connected) {
 // Called every loop pass, for animations.
 void displayAnimate(char state, unsigned long now) {
   (void)state;  // the face engine already knows the state
-  if (now - lastFaceFrame >= 1000UL / FACE_FPS) faceFrame(now);
+  if (now - lastFaceFrame >= 1000UL / FACE_FPS) {
+    faceFrame(now);
+    // Dim the backlight as MAICA falls asleep; back up as it wakes.
+    static int lastDuty = BACKLIGHT_DUTY;
+    int duty = BACKLIGHT_DUTY - (int)((BACKLIGHT_DUTY - SLEEP_BACKLIGHT_DUTY) * faceEngine.sleepiness() + 0.5f);
+    if (duty != lastDuty) {
+      ledcWrite(TFT_LITE, duty);
+      lastDuty = duty;
+    }
+  }
 }
 
 // -- Bluetooth ---------------------------------------------------------------
@@ -514,7 +540,7 @@ void btEventCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
 void setup() {
   Serial.begin(115200);  // USB, status/debug output only -- commands come over Bluetooth
   delay(500);
-  Serial.println("\n=== MAICA status firmware v8 (Classic Bluetooth + ST7789) ===");
+  Serial.println("\n=== MAICA status firmware v9 (Classic Bluetooth + ST7789) ===");
   Serial.printf("Chip: %s rev %d, %d cores @ %d MHz\n",
                 ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores(), ESP.getCpuFreqMHz());
 

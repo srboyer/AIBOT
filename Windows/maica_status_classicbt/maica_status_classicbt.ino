@@ -1,5 +1,31 @@
 /*
-  maica_status_classicbt.ino  --  v6 (MAICA PCB, ESP32-WROVER-E)
+  maica_status_classicbt.ino  --  v8 (MAICA PCB, ESP32-WROVER-E)
+
+  v8: tilt MAICA and the eyes fall that way. The board's LIS2DW12
+  accelerometer (I2C on IO21/IO22) is read 50 times a second; tilting left
+  drops the eyes left, tilting back drops them up, and so on, on a soft
+  spring so they overshoot and settle. Tilt is measured from how MAICA was
+  resting at power-on (so lying flat and standing upright both work) and the
+  rest slowly follows a new resting angle. Readings during bumps and shakes
+  are ignored. Line up the chip's axes with the screen with ACCEL_SCREEN_*
+  (TILT_DEBUG prints what it sees). Runs fine without the chip, too.
+
+  Tap MAICA -- on its head, say -- and a ripple spreads across the screen
+  from where it was hit, bending the eyes and colour as the waves pass, while
+  the eyes wince and get knocked away from the hit. The LIS2DW12's own tap
+  detector spots the hit and which way it came (it now samples at 400 Hz so
+  it can); TAP_THRESHOLD sets how hard a tap it takes.
+
+  v7: the whole screen is the face. It fills with the status colour and the
+  eyes carry the expression, a different eye shape per status -- IDLE tall
+  rounded eyes on green, ANALYZING wide visor eyes on blue, THINKING diamond
+  eyes on yellow looking up at thought bubbles, QUESTION big round eyes on
+  red beside a bold exclamation mark. Each change washes the new colour
+  across the screen with a bright seam, a different wipe per status (a
+  left-to-right scan, a clock sweep, an alarm burst out of the "!", a flood
+  from the middle), while the eyes act it out. Details in maica_face.h. Each
+  frame redraws only the eyes (and bubbles and "!") and each wipe's moving
+  band.
 
   v6: a new face. MAICA is now one glowing geometric body with two dark eyes,
   a different shape per status -- IDLE a green circle, ANALYZING a blue
@@ -86,7 +112,9 @@
 #include <SPI.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
+#include <Wire.h>
 #include "maica_face.h"
+#include "maica_tilt.h"
 
 #if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BT_SPP_ENABLED)
 #error Classic Bluetooth (SPP) is not enabled for this board. In Arduino IDE, Tools > Board must be "ESP32 Wrover Module" (a plain ESP32 with Classic Bluetooth).
@@ -117,6 +145,37 @@
 // Print a boot benchmark (compute vs SPI cost) and the real per-frame cost
 // every 30s to the serial port (0 = off).
 #define FACE_STATS 1
+
+// -- Accelerometer: tilt MAICA and the eyes fall that way --------------------
+// LIS2DW12 (U6) on I2C: SDA = IO21, SCL = IO22 (the ESP32's defaults), SA0
+// tied high so its address is 0x19. Its INT1/INT2 (IO34/IO35) aren't used yet.
+#define ACCEL_SDA  21
+#define ACCEL_SCL  22
+#define ACCEL_ADDR 0x19
+#define ACCEL_HZ   50         // readings per second
+
+// How the chip's axes line up with the screen. Screen x points to the
+// screen's right, y toward its bottom, z out of the screen toward you; set
+// each to the chip axis pointing the same way (1 = X, 2 = Y, 3 = Z), negative
+// if it points the opposite way. To find them with TILT_DEBUG on, hold MAICA
+// still in each pose and see which "chip" value reads about +1.00 (that axis
+// points straight up; -1.00 means the same axis, negative):
+//   lying flat, screen facing up            -> ACCEL_SCREEN_Z
+//   standing on its left edge               -> ACCEL_SCREEN_X
+//   standing upside down, on its top edge   -> ACCEL_SCREEN_Y
+#define ACCEL_SCREEN_X   1
+#define ACCEL_SCREEN_Y  -2
+#define ACCEL_SCREEN_Z   3
+
+// How hard a tap has to be to set off a ripple: 1 (feather) - 31 (whack),
+// in steps of 1/16 g. Each tap is printed to the serial port.
+#define TAP_THRESHOLD 9
+// The chip reports which way a tap pushed MAICA; set to 1 if ripples start
+// from the opposite side to where you tap.
+#define TAP_SIGN_FLIP 0
+
+// Print the accelerometer and the tilt it gives 4 times a second (0 = off).
+#define TILT_DEBUG 1
 
 // RGB565 from 8-bit R, G, B (boot splash).
 #define RGB(r, g, b) (uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3))
@@ -153,8 +212,6 @@ bool displayConnected = false;  // drives the face's "no computer" dot
 
 face::Engine faceEngine;
 uint16_t lineBuf[240];        // one row of pixels at a time -- no framebuffer
-face::Rect prevBox[2];        // last frame's body and hand regions
-bool prevBoxValid = false;
 bool faceShown = false;       // false until the face first replaces the boot splash
 unsigned long lastFaceFrame = 0;
 
@@ -162,37 +219,50 @@ unsigned long lastFaceFrame = 0;
 unsigned long statFrames = 0, statMicros = 0, statPixels = 0, statSince = 0;
 #endif
 
-// Computes every pixel of rect b and streams it to the panel row by row.
-void faceRenderRect(const face::Rect &b, const face::Frame &f) {
-  if (b.empty()) return;
-  int w = b.x1 - b.x0;
+// Computes every pixel of region g and streams it to the panel: a rect in one
+// address window, a ring (a radial wipe's band) one row span at a time.
+void faceRenderRegion(const face::Region &g, const face::Frame &f) {
+  if (g.box.empty()) return;
   bool linkDot = !displayConnected;
   tft.startWrite();
-  tft.setAddrWindow(b.x0, b.y0, w, b.y1 - b.y0);
-  for (int y = b.y0; y < b.y1; y++) {
-    face::renderRow(lineBuf, b.x0, b.x1, y, f, linkDot);
-    tft.writePixels(lineBuf, w);
+  if (!g.ring) {
+    int w = g.box.x1 - g.box.x0;
+    tft.setAddrWindow(g.box.x0, g.box.y0, w, g.box.y1 - g.box.y0);
+    for (int y = g.box.y0; y < g.box.y1; y++) {
+      face::renderRow(lineBuf, g.box.x0, g.box.x1, y, f, linkDot);
+      tft.writePixels(lineBuf, w);
+    }
+#if FACE_STATS
+    statPixels += (unsigned long)w * (g.box.y1 - g.box.y0);
+#endif
+  } else {
+    int xs[4];
+    for (int y = g.box.y0; y < g.box.y1; y++) {
+      int n = face::rowSpans(g, y, xs);
+      for (int i = 0; i < n; i++) {
+        int x0 = xs[2 * i], w = xs[2 * i + 1] - x0;
+        face::renderRow(lineBuf, x0, x0 + w, y, f, linkDot);
+        tft.setAddrWindow(x0, y, w, 1);
+        tft.writePixels(lineBuf, w);
+#if FACE_STATS
+        statPixels += w;
+#endif
+      }
+    }
   }
   tft.endWrite();
-#if FACE_STATS
-  statPixels += (unsigned long)w * (b.y1 - b.y0);
-#endif
 }
 
-// One animation frame: each part's region now, united with where it was last
-// frame, so anything that moved is erased behind itself.
+// One animation frame: the engine works out what changed since the last frame
+// (the eyes where they are now and were, each wipe's moving band) and only
+// that is redrawn.
 void faceFrame(unsigned long now) {
 #if FACE_STATS
   unsigned long t0 = micros();
 #endif
   faceEngine.update(now);
   const face::Frame &f = faceEngine.frame();
-  face::Rect box[2] = {f.bodyBox(), f.handBox()};
-  for (int i = 0; i < 2; i++) {
-    faceRenderRect(prevBoxValid ? face::unite(box[i], prevBox[i]) : box[i], f);
-    prevBox[i] = box[i];
-  }
-  prevBoxValid = true;
+  for (int i = 0; i < f.nRegions; i++) faceRenderRegion(f.regions[i], f);
   lastFaceFrame = now;
 #if FACE_STATS
   statMicros += micros() - t0;
@@ -211,12 +281,12 @@ void faceFrame(unsigned long now) {
 
 #if FACE_STATS
 // One-time boot measurement, separating the two costs of a face frame:
-// computing pixels vs. pushing them over SPI. Draws a black rectangle over the
-// splash, which is cleared right after anyway.
+// computing pixels vs. pushing them over SPI, over the area the eyes take.
+// Draws a black rectangle over the splash, which is cleared right after anyway.
 void faceBenchmark() {
   faceEngine.update(millis());
   const face::Frame &f = faceEngine.frame();
-  face::Rect b = f.bodyBox();
+  face::Rect b = face::unite(f.eye[0].box, f.eye[1].box);
   int w = b.x1 - b.x0, h = b.y1 - b.y0;
   unsigned long px = (unsigned long)w * h;
 
@@ -238,18 +308,139 @@ void faceBenchmark() {
 #endif
 
 // Shows the face in `state`. The first time (replacing the boot splash) it
-// clears the screen and the face grows in and wakes up; after that every
-// state change plays that state's transition from what's on screen.
+// clears the screen, the colour floods out and the eyes grow in and wake up;
+// after that every state change plays that state's transition from what's on
+// screen.
 void showFace(char state, unsigned long now) {
   bool appearing = !faceShown;
   if (appearing) {
     tft.fillScreen(ST77XX_BLACK);
-    prevBoxValid = false;
     faceShown = true;
   }
   faceEngine.setState(state, now, appearing);
   faceFrame(now);
-  faceRenderRect(face::LINK_BOX, faceEngine.frame());  // draw or erase the "no computer" dot
+  faceRenderRegion({face::LINK_BOX, false, 0, 0, 0, 0}, faceEngine.frame());  // draw or erase the "no computer" dot
+}
+
+// -- Accelerometer -----------------------------------------------------------
+
+// LIS2DW12 registers.
+const uint8_t LIS_WHO_AM_I = 0x0F, LIS_CTRL1 = 0x20, LIS_CTRL2 = 0x21, LIS_CTRL3 = 0x22;
+const uint8_t LIS_CTRL4_INT1 = 0x23, LIS_CTRL6 = 0x25, LIS_OUT_X_L = 0x28;
+const uint8_t LIS_TAP_THS_X = 0x30, LIS_TAP_THS_Y = 0x31, LIS_TAP_THS_Z = 0x32, LIS_INT_DUR = 0x33;
+const uint8_t LIS_WAKE_UP_THS = 0x34, LIS_TAP_SRC = 0x39, LIS_CTRL7 = 0x3F;
+const uint8_t LIS_ID = 0x44;
+unsigned long lastTap = 0;
+
+bool accelOk = false;          // false if the chip didn't answer: the face just doesn't tilt
+tilt::Tracker tiltTracker;
+unsigned long lastTiltRead = 0;
+
+bool accelWrite(uint8_t reg, uint8_t value) {
+  Wire.beginTransmission(ACCEL_ADDR);
+  Wire.write(reg);
+  Wire.write(value);
+  return Wire.endTransmission() == 0;
+}
+
+bool accelReadRegs(uint8_t reg, uint8_t *buf, uint8_t n) {
+  Wire.beginTransmission(ACCEL_ADDR);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom((uint8_t)ACCEL_ADDR, n) != n) return false;
+  for (uint8_t i = 0; i < n; i++) buf[i] = Wire.read();
+  return true;
+}
+
+// Finds the chip and starts it: 400 Hz (fast enough to catch a tap's short
+// spike), high-performance, +-2g, low-noise, with single-tap detection on
+// all three axes, latched until read.
+bool accelBegin() {
+  Wire.begin(ACCEL_SDA, ACCEL_SCL, 400000);
+  uint8_t id = 0;
+  if (!accelReadRegs(LIS_WHO_AM_I, &id, 1) || id != LIS_ID) {
+    Serial.printf("Accelerometer not found at 0x%02X (WHO_AM_I read 0x%02X) -- tilt disabled.\n", ACCEL_ADDR, id);
+    return false;
+  }
+  accelWrite(LIS_CTRL2, 0x40);  // soft reset
+  delay(10);
+  const uint8_t ths = TAP_THRESHOLD & 0x1F;
+  bool ok = accelWrite(LIS_CTRL2, 0x0C)              // BDU: X/Y/Z from one sample; register auto-increment
+            && accelWrite(LIS_CTRL3, 0x10)           // latch tap events until TAP_SRC is read
+            && accelWrite(LIS_CTRL6, 0x04)           // +-2g, low-noise
+            && accelWrite(LIS_TAP_THS_X, ths)
+            && accelWrite(LIS_TAP_THS_Y, ths)        // (axis priority X, Y, Z)
+            && accelWrite(LIS_TAP_THS_Z, 0xE0 | ths) // taps on X, Y and Z
+            && accelWrite(LIS_INT_DUR, 0x06)         // quiet 1, shock 2 (ST's single-tap timing)
+            && accelWrite(LIS_WAKE_UP_THS, 0x00)     // single taps only
+            && accelWrite(LIS_CTRL4_INT1, 0x40)      // single tap -> INT1 (IO34), unused for now
+            && accelWrite(LIS_CTRL7, 0x20)           // enable the tap engine's interrupts
+            && accelWrite(LIS_CTRL1, 0x74);          // 400 Hz, high-performance
+  if (!ok) Serial.println("Accelerometer didn't accept its settings -- tilt disabled.");
+  return ok;
+}
+
+// One reading in g, chip axes. At +-2g the 16-bit outputs are 16384 per g.
+bool accelRead(float g[3]) {
+  uint8_t b[6];
+  if (!accelReadRegs(LIS_OUT_X_L, b, 6)) return false;
+  for (int i = 0; i < 3; i++) g[i] = (int16_t)(b[2 * i] | (b[2 * i + 1] << 8)) / 16384.0f;
+  return true;
+}
+
+// A chip axis by its ACCEL_SCREEN_* code: 1/2/3 = X/Y/Z, negative = reversed.
+float chipAxis(const float g[3], int code) {
+  float v = g[(code < 0 ? -code : code) - 1];
+  return code < 0 ? -v : v;
+}
+
+// Which side MAICA was hit on, from TAP_SRC: the axis the tap was felt on and
+// which way it pushed MAICA (a hit on the head pushes it toward the screen's
+// bottom). 'T'op, 'B'ottom, 'L'eft, 'R'ight, or 'C' (face or back).
+char tapSide(uint8_t src) {
+  int chip = (src & 0x04) ? 1 : (src & 0x02) ? 2 : (src & 0x01) ? 3 : 0;
+  int sign = ((src & 0x08) ? -1 : 1) * (TAP_SIGN_FLIP ? -1 : 1);
+  const int axes[3] = {ACCEL_SCREEN_X, ACCEL_SCREEN_Y, ACCEL_SCREEN_Z};
+  for (int j = 0; j < 2; j++) {
+    if (chip == 0 || abs(axes[j]) != chip) continue;
+    int push = sign * (axes[j] < 0 ? -1 : 1);  // + = toward the screen's right / bottom
+    if (j == 0) return push > 0 ? 'L' : 'R';
+    return push > 0 ? 'T' : 'B';
+  }
+  return 'C';
+}
+
+// Reads the accelerometer ACCEL_HZ times a second, hands the tilt to the face,
+// and sets off a ripple when it has felt a tap.
+void tiltUpdate(unsigned long now) {
+  if (!accelOk || now - lastTiltRead < 1000UL / ACCEL_HZ) return;
+  float dt = lastTiltRead ? (now - lastTiltRead) / 1000.0f : 1.0f / ACCEL_HZ;
+  lastTiltRead = now;
+  float g[3];
+  if (!accelRead(g)) return;
+  tilt::Vec3 s = {chipAxis(g, ACCEL_SCREEN_X), chipAxis(g, ACCEL_SCREEN_Y), chipAxis(g, ACCEL_SCREEN_Z)};
+  tiltTracker.feed(s, dt);
+  faceEngine.setTilt(tiltTracker.x(), tiltTracker.y());
+
+  uint8_t src;
+  if (accelReadRegs(LIS_TAP_SRC, &src, 1) && (src & 0x40) && now - lastTap > 150) {  // TAP_IA (reading clears it)
+    lastTap = now;
+    char side = tapSide(src);
+    faceEngine.poke(side, now);
+    Serial.printf("[tap] on the %s (chip %c%c)\n", side == 'T' ? "head" : side == 'B' ? "bottom" : side == 'L' ? "left"
+                  : side == 'R' ? "right" : "face/back", (src & 0x04) ? 'X' : (src & 0x02) ? 'Y' : 'Z',
+                  (src & 0x08) ? '-' : '+');
+  }
+#if TILT_DEBUG
+  static unsigned long lastPrint = 0;
+  if (now - lastPrint >= 250) {
+    lastPrint = now;
+    float tx = tiltTracker.x(), ty = tiltTracker.y();
+    Serial.printf("[tilt] chip X=%+.2f Y=%+.2f Z=%+.2f g | eyes fall %s %.2f, %s %.2f%s\n", g[0], g[1], g[2],
+                  tx < 0 ? "left" : "right", fabsf(tx), ty < 0 ? "up" : "down", fabsf(ty),
+                  tiltTracker.ready() ? "" : "  (settling)");
+  }
+#endif
 }
 
 // -- Display layer -----------------------------------------------------------
@@ -267,7 +458,7 @@ void drawSplash() {
   tft.print("MAICA");
   tft.setTextSize(2);
   tft.setCursor(54, 105);           // 11 chars x 12px = 132px, centred
-  tft.print("firmware v6");
+  tft.print("firmware v8");
   tft.setTextColor(ST77XX_BLACK);
   tft.setCursor(12, 188);  tft.print("RED");
   tft.setCursor(92, 188);  tft.print("GRN");
@@ -323,12 +514,15 @@ void btEventCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
 void setup() {
   Serial.begin(115200);  // USB, status/debug output only -- commands come over Bluetooth
   delay(500);
-  Serial.println("\n=== MAICA status firmware v6 (Classic Bluetooth + ST7789) ===");
+  Serial.println("\n=== MAICA status firmware v8 (Classic Bluetooth + ST7789) ===");
   Serial.printf("Chip: %s rev %d, %d cores @ %d MHz\n",
                 ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores(), ESP.getCpuFreqMHz());
 
   displayBegin();
   Serial.println("Screen initialised (240x240 ST7789 on EYESPI).");
+
+  accelOk = accelBegin();
+  if (accelOk) Serial.println("Accelerometer ready (LIS2DW12): tilt MAICA and the eyes follow.");
 
   SerialBT.register_callback(btEventCallback);
   SerialBT.begin(BT_DEVICE_NAME);  // Classic Bluetooth (SPP), NOT BLE
@@ -368,6 +562,7 @@ void loop() {
     displayState(currentState, connected);
     lastState = currentState;
   }
+  tiltUpdate(millis());
   displayAnimate(currentState, millis());
 
   delay(2);

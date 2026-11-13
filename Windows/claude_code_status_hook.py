@@ -81,6 +81,9 @@ def main():
         # after ~60s of inactivity; see claude_code_backend.py.
         "notification_type": payload.get("notification_type"),
         "message": payload.get("message"),
+        # Pre/PostToolUse only: which tool. Lets the backend see the
+        # question tool (AskUserQuestion) finishing -- i.e. you answered.
+        "tool_name": payload.get("tool_name"),
         "written_at": time.time(),
     }
 
@@ -95,6 +98,37 @@ def main():
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(status, f)
         os.replace(tmp_path, STATUS_FILE)
+    except Exception:
+        pass
+
+    _append_history(status, payload)
+
+
+# A short rolling history of hook events next to STATUS_FILE, for diagnosing
+# what Claude Code actually fires and in what order (the status file only
+# ever holds the latest event). Event names, tool names and notification
+# types only -- never prompts, tool inputs or outputs. Trimmed to the most
+# recent half once it passes HISTORY_MAX_BYTES.
+HISTORY_FILE = os.path.splitext(STATUS_FILE)[0] + "_history.jsonl"
+HISTORY_MAX_BYTES = 64 * 1024
+
+
+def _append_history(status, payload):
+    try:
+        line = json.dumps({
+            "t": round(status["written_at"], 3),
+            "event": status["event"],
+            "tool": payload.get("tool_name"),
+            "notification_type": status["notification_type"],
+            "session": (status["session_id"] or "")[:8],
+        })
+        with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+        if os.path.getsize(HISTORY_FILE) > HISTORY_MAX_BYTES:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+                f.writelines(lines[len(lines) // 2:])
     except Exception:
         pass
 

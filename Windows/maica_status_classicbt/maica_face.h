@@ -46,6 +46,12 @@
   night falling over the screen, Zs). Any status change, tap or pick-up
   wakes it.
 
+  Two faces. While two AI apps are busy at once, Faces (at the end of this
+  file) splits the screen: each app gets its own face in its own half, at
+  half size, springing apart and squeezing back together. Each Engine draws
+  through a View -- where its face sits on the screen and at what scale --
+  and only inside its own half.
+
   Rendering: every shape is a signed distance field (negative inside,
   positive outside), so edges are anti-aliased over one pixel. Any pixel can
   be computed on its own, so the sketch streams rows to the panel with no
@@ -60,6 +66,16 @@
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
+#include <new>
+
+// FACE_ROUND 1: lay the face out for a round 240x240 screen (e.g. Adafruit's
+// 1.28" GC9A01A), whose corners aren't there -- everything that sat in a
+// corner moves inside the circle, the eyes can't tilt into the corners, and
+// the edge darkening frames the circle. The sketch sets it before including
+// this file.
+#ifndef FACE_ROUND
+#define FACE_ROUND 0
+#endif
 
 namespace face {
 
@@ -68,7 +84,11 @@ namespace face {
 const float TAU = 6.2831853f;
 
 // Background: the status colour, darkening slightly toward the corners.
+#if FACE_ROUND
+const float VIG_CX = 120.0f, VIG_CY = 120.0f, VIG_R0 = 60.0f, VIG_R1 = 130.0f, VIG_AMOUNT = 0.22f;
+#else
 const float VIG_CX = 120.0f, VIG_CY = 120.0f, VIG_R0 = 70.0f, VIG_R1 = 175.0f, VIG_AMOUNT = 0.22f;
+#endif
 
 // Eyes, thought bubbles and the "!" are dark: the background times DARK.
 const float DARK = 0.08f;
@@ -93,13 +113,24 @@ struct Shape { float r, g, b, ew, eh, er, erot, gap, ey, cx, tilt; };
 const Shape SHAPE_IDLE      = {40 / 255.0f, 220 / 255.0f, 90 / 255.0f, 26, 40, 22, 0.0f, 46, 116, 120, 0.0f};
 const Shape SHAPE_ANALYZING = {40 / 255.0f, 120 / 255.0f, 1.0f, 34, 17, 9, 0.0f, 46, 116, 120, 0.0f};
 const Shape SHAPE_THINKING  = {1.0f, 205 / 255.0f, 0.0f, 27, 27, 8, 0.785f, 47, 112, 120, 0.0f};
+#if FACE_ROUND  // a little smaller and further left: the "!" sits further in, and the
+                // eyes popping wide as they land must stay inside the circle
+const Shape SHAPE_QUESTION  = {1.0f, 64 / 255.0f, 56 / 255.0f, 29, 32, 29, -0.12f, 38, 118, 92, -0.12f};
+#else
 const Shape SHAPE_QUESTION  = {1.0f, 64 / 255.0f, 56 / 255.0f, 33, 36, 33, -0.12f, 42, 118, 100, -0.12f};
+#endif
 
 // Thought bubbles (THINKING): three dots rising to the upper right, clear of
 // the right eye at the top of its gaze.
+#if FACE_ROUND  // rising above the head instead, inside the circle
+const float DOT_X[3] = {156.0f, 168.0f, 180.0f};
+const float DOT_Y[3] = {52.0f, 38.0f, 26.0f};
+const float DOT_R[3] = {4.0f, 5.5f, 6.5f};
+#else
 const float DOT_X[3] = {194.0f, 207.0f, 221.0f};
 const float DOT_Y[3] = {42.0f, 29.0f, 17.0f};
 const float DOT_R[3] = {4.0f, 5.5f, 7.0f};
+#endif
 
 // The exclamation mark (QUESTION), in its own coordinates: origin at the
 // centre of its dot, y up the bar is negative. The bar tapers from wide at
@@ -107,19 +138,31 @@ const float DOT_R[3] = {4.0f, 5.5f, 7.0f};
 // MARK_SCALE and leaning MARK_LEAN radians (+ = clockwise); every
 // SHAKE_PERIOD_MS it hops and shakes +-MARK_SHAKE radians for SHAKE_MS.
 // Red bursts out from BURST_X/Y, the middle of the mark.
+#if FACE_ROUND
+const float MARK_X = 188.0f, MARK_Y = 118.0f, MARK_SCALE = 1.1f;
+#else
 const float MARK_X = 210.0f, MARK_Y = 100.0f, MARK_SCALE = 1.35f;
+#endif
 const float MARK_LEAN = 0.10f, MARK_SHAKE = 0.14f;
 const float MARK_BOB_PX = 3.0f, MARK_HOP_PX = 5.0f;
 const uint32_t MARK_BOB_MS = 2100;
 const uint32_t SHAKE_PERIOD_MS = 3200, SHAKE_MS = 900, SHAKE_SWING_MS = 300;
+#if FACE_ROUND
+const float BURST_X = 191.0f, BURST_Y = 94.0f;
+#else
 const float BURST_X = 213.0f, BURST_Y = 70.0f;
+#endif
 const float BAR_BOTTOM_Y = -14.0f, BAR_LEN = 30.0f;    // the bar: from its narrow end up
 const float BAR_R_BOTTOM = 4.0f, BAR_R_TOP = 7.5f;     // end radii
 const float MARK_DOT_R = 5.5f;
 const float MARK_LX0 = -7.5f, MARK_LX1 = 7.5f, MARK_LY0 = -51.5f, MARK_LY1 = 5.5f;  // local bounds
 
 // "No computer connected" dot, bottom-right.
+#if FACE_ROUND  // bottom centre, a little left so a split face's seam misses it
+const float LINK_X = 104.0f, LINK_Y = 216.0f, LINK_R = 5.0f;
+#else
 const float LINK_X = 222.0f, LINK_Y = 222.0f, LINK_R = 5.0f;
+#endif
 const float LINK_GREY = 170 / 255.0f;
 
 // Timing (ms).
@@ -144,6 +187,8 @@ const float TILT_STRETCH = 0.07f, TILT_STRETCH_PER_PX_S = 0.00025f;
 // They stop this far from the screen's edges (and, on QUESTION, from the
 // "!"), bouncing back off with this much of their speed.
 const float TILT_WALL_PX = 6.0f, TILT_MARK_WALL_PX = 16.0f, TILT_BOUNCE = 0.35f;
+// Round screen: the eyes' outer corners also stay within this radius.
+const float TILT_ROUND_R = 116.0f;
 
 // A tap (Engine::poke): a ring of waves travels out from where MAICA was hit
 // at RIPPLE_SPEED px/s -- RIPPLE_W px of waves RIPPLE_WAVE px apart, bending
@@ -174,7 +219,11 @@ const float ANGER_LID_DROP = 0.32f, ANGER_SLANT = 0.5f;  // top lids at full ang
 // toward it -- arcs of radius VEIN_ARC_R centred VEIN_ARC_OFF out along the
 // diagonals, VEIN_ARC_HALF_ANGLE either side of their middle -- drawn at
 // VEIN_SCALE and throbbing.
+#if FACE_ROUND
+const float VEIN_X = 58.0f, VEIN_Y = 50.0f, VEIN_SCALE = 1.3f;
+#else
 const float VEIN_X = 40.0f, VEIN_Y = 42.0f, VEIN_SCALE = 1.6f;
+#endif
 const float VEIN_ARC_R = 10.0f, VEIN_ARC_OFF = 18.0f, VEIN_ARC_HALF_ANGLE = 0.5f, VEIN_ARC_HW = 2.0f;
 const float VEIN_EXTENT = 14.0f;  // local half-size that holds all four strokes
 const uint32_t VEIN_THROB_MS = 650;
@@ -198,7 +247,11 @@ const float BORED_IN_S = 2.5f, SLEEP_IN_S = 4.0f, WAKE_S = 0.35f;  // how fast t
 const float WAKE_MOTION_PX_S = 90.0f;   // eyes falling this fast (MAICA picked up) count as activity
 // The Zs: three, each floating from Z_FROM to Z_TO over Z_MS, growing and
 // fading, a third of the way apart.
+#if FACE_ROUND
+const float Z_FROM_X = 162.0f, Z_FROM_Y = 92.0f, Z_TO_X = 190.0f, Z_TO_Y = 44.0f;
+#else
 const float Z_FROM_X = 172.0f, Z_FROM_Y = 100.0f, Z_TO_X = 216.0f, Z_TO_Y = 26.0f;
+#endif
 const uint32_t Z_MS = 3000;
 const float Z_HALF = 7.0f, Z_STROKE = 2.0f, Z_LIGHT = 0.85f;
 
@@ -230,7 +283,37 @@ inline Rect boxAround(float x0, float y0, float x1, float y1, float m) {
 }
 
 const Rect FULL_SCREEN = {0, 0, 240, 240};
+#if FACE_ROUND
+const Rect LINK_BOX = {96, 208, 113, 225};
+#else
 const Rect LINK_BOX = {214, 214, 231, 231};
+#endif
+
+// Where on the screen a face is drawn. The face is designed on a 240x240
+// "virtual" screen; a view puts it on the real one -- virtual (120, 120)
+// lands at (cx, cy), scaled by s -- and gives it the panel x0..x1, y0..y1
+// (whole pixels), outside which it draws nothing. One face: the whole screen
+// at full size. Split: half the screen each (see Faces).
+struct View {
+  float x0, y0, x1, y1, s, cx, cy;
+  float X(float vx) const { return cx + (vx - 120) * s; }
+  float Y(float vy) const { return cy + (vy - 120) * s; }
+  // The panel's edges in virtual coordinates.
+  float vx0() const { return 120 + (x0 - cx) / s; }
+  float vx1() const { return 120 + (x1 - cx) / s; }
+  float vy0() const { return 120 + (y0 - cy) / s; }
+  float vy1() const { return 120 + (y1 - cy) / s; }
+  Rect panel() const { return {(int)x0, (int)y0, (int)x1, (int)y1}; }
+  bool same(const View &o) const {
+    return x0 == o.x0 && y0 == o.y0 && x1 == o.x1 && y1 == o.y1 && s == o.s && cx == o.cx && cy == o.cy;
+  }
+};
+const View VIEW_FULL = {0, 0, 240, 240, 1, 120, 120};
+
+inline Rect intersect(const Rect &a, const Rect &b) {
+  return {a.x0 > b.x0 ? a.x0 : b.x0, a.y0 > b.y0 ? a.y0 : b.y0, a.x1 < b.x1 ? a.x1 : b.x1,
+          a.y1 < b.y1 ? a.y1 : b.y1};
+}
 
 inline float clamp01(float v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
 inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -393,7 +476,12 @@ const int MAX_REGIONS = 6 + MAX_WIPES + MAX_RIPPLES + 1;
 struct RippleGeo { float ox, oy, R, in2, out2, amp, light; };
 
 struct Frame {
+  View view;                  // where this face is on the screen; everything below is in screen pixels
   float baseR, baseG, baseB;  // the colour under every wipe
+  float vigX, vigY, vigR0sq, vigInv;  // corner darkening: centre, inner radius squared, 1 / (r1^2 - r0^2)
+  float dotX[3], dotY[3];
+  float veinX, veinY;
+  float rippleW, rippleLutK;  // ripple packet width on screen, LUT steps per pixel
   int nWipes;
   WipeGeo wipes[MAX_WIPES];   // oldest first
   EyeGeo eye[2];
@@ -412,14 +500,20 @@ struct Frame {
   int nRegions;               // what to redraw this frame
   Region regions[MAX_REGIONS];
 
-  void prepare(const Pose &p, float open, float breathe, float floatY, uint32_t now);
+  void prepare(const Pose &p, float open, float breathe, float floatY, uint32_t now, const View &v);
 };
 
-inline void Frame::prepare(const Pose &p, float open, float breathe, float floatY, uint32_t now) {
+inline void Frame::prepare(const Pose &p, float open, float breathe, float floatY, uint32_t now, const View &v) {
+  view = v;
+  vigX = v.X(VIG_CX);
+  vigY = v.Y(VIG_CY);
+  vigR0sq = VIG_R0 * v.s * VIG_R0 * v.s;
+  vigInv = 1.0f / ((VIG_R1 * v.s) * (VIG_R1 * v.s) - vigR0sq);
+
   // Eyes. Squash and stretch act along each eye's own axes; the eyelids and
   // the happy arch act along the screen's, so a diamond still closes flat.
-  float sx = p.sx * breathe, sy = p.sy * breathe;
-  float pcx = p.cx + p.ox + p.lx, pcy = p.ey + p.oy + p.ly + floatY;
+  float sx = p.sx * breathe * v.s, sy = p.sy * breathe * v.s;
+  float pcx = v.X(p.cx + p.ox + p.lx), pcy = v.Y(p.ey + p.oy + p.ly + floatY);
   float tc = cosf(p.tilt), ts = sinf(p.tilt);
   float ec = cosf(p.erot), es = sinf(p.erot);
   float er = minf(p.er, minf(p.ew, p.eh));
@@ -447,8 +541,8 @@ inline void Frame::prepare(const Pose &p, float open, float breathe, float float
     float m = minf(hw, hh);
     e.gx = GLINT_X * hw;
     e.gy = GLINT_Y * hh;
-    e.gr = clampf(GLINT_R * m, 2.5f, 8.0f);
-    e.gvis = clamp01((m - 12) / 10);
+    e.gr = clampf(GLINT_R * m, 2.5f * v.s, 8.0f * v.s);
+    e.gvis = clamp01((m / v.s - 12) / 10);
     e.topOn = p.lidDrop > 0.001f || fabsf(p.lidSlant) > 0.001f;
     e.topY = -hh + 2 * hh * clamp01(p.lidDrop);
     e.slTan = tanf(p.lidSlant);
@@ -463,21 +557,23 @@ inline void Frame::prepare(const Pose &p, float open, float breathe, float float
   for (int i = 0; i < 3; i++) {
     float w = sinf(TAU * (ph - 0.22f * i));
     dotK[i] = dots * (0.35f + 0.65f * clamp01(w));
-    dotRad[i] = DOT_R[i] * (0.55f + 0.45f * dots);
+    dotRad[i] = DOT_R[i] * (0.55f + 0.45f * dots) * v.s;
+    dotX[i] = v.X(DOT_X[i]);
+    dotY[i] = v.Y(DOT_Y[i]);
   }
-  dotsBox = dots > 0.001f ? boxAround(DOT_X[0] - DOT_R[0], DOT_Y[2] - DOT_R[2], DOT_X[2] + DOT_R[2],
-                                      DOT_Y[0] + DOT_R[0], 2)
+  dotsBox = dots > 0.001f ? boxAround(dotX[0] - DOT_R[0] * v.s, dotY[2] - DOT_R[2] * v.s,
+                                      dotX[2] + DOT_R[2] * v.s, dotY[0] + DOT_R[0] * v.s, 2)
                           : Rect{0, 0, 0, 0};
 
   // The "!": rotation for screen -> mark-local, and its on-screen bounds (the
   // local bounding box's four corners, rotated and scaled). It floats, and
   // hops and swells a little as it shakes.
   markK = clamp01(p.mark);
-  markScale = maxf(MARK_SCALE * p.markPop * (1 + 0.08f * p.beat), 0.05f);
+  markScale = maxf(MARK_SCALE * p.markPop * (1 + 0.08f * p.beat), 0.05f) * v.s;
   markInvScale = 1.0f / markScale;
-  markX = MARK_X + p.ox * 0.5f;
-  markY = MARK_Y + MARK_BOB_PX * sinf(TAU * (now % MARK_BOB_MS) / MARK_BOB_MS) - MARK_HOP_PX * p.beat +
-          p.oy * 0.6f;
+  markX = v.X(MARK_X + p.ox * 0.5f);
+  markY = v.Y(MARK_Y + MARK_BOB_PX * sinf(TAU * (now % MARK_BOB_MS) / MARK_BOB_MS) - MARK_HOP_PX * p.beat +
+              p.oy * 0.6f);
   float ang = MARK_LEAN + MARK_SHAKE * p.shake;
   markCos = cosf(ang);
   markSin = sinf(ang);
@@ -497,20 +593,22 @@ inline void Frame::prepare(const Pose &p, float open, float breathe, float float
   veinK = clamp01(p.vein);
   float throb = sinf(TAU * (now % VEIN_THROB_MS) / VEIN_THROB_MS);
   throb = throb > 0 ? throb * throb : 0;
-  veinScale = VEIN_SCALE * (0.5f + 0.5f * veinK) * (1 + 0.15f * throb);
+  veinScale = VEIN_SCALE * (0.5f + 0.5f * veinK) * (1 + 0.15f * throb) * v.s;
   veinInv = 1.0f / veinScale;
+  veinX = v.X(VEIN_X);
+  veinY = v.Y(VEIN_Y);
   float vr = VEIN_EXTENT * veinScale;
-  veinBox = veinK > 0.001f ? boxAround(VEIN_X - vr, VEIN_Y - vr, VEIN_X + vr, VEIN_Y + vr, 2) : Rect{0, 0, 0, 0};
+  veinBox = veinK > 0.001f ? boxAround(veinX - vr, veinY - vr, veinX + vr, veinY + vr, 2) : Rect{0, 0, 0, 0};
 
   // The Zs drift up and to the right, growing, a third of a cycle apart.
   zK = clamp01(p.zs);
   float zx0 = 1e9f, zy0 = 1e9f, zx1 = -1e9f, zy1 = -1e9f;
   for (int k = 0; k < 3; k++) {
     float u = (float)((now + k * (Z_MS / 3)) % Z_MS) / Z_MS;
-    zS[k] = 0.45f + 0.65f * u;
+    zS[k] = (0.45f + 0.65f * u) * v.s;
     zInv[k] = 1.0f / zS[k];
-    zX[k] = lerpf(Z_FROM_X, Z_TO_X, u) + 4 * sinf(TAU * u * 1.5f + k);
-    zY[k] = lerpf(Z_FROM_Y, Z_TO_Y, u);
+    zX[k] = v.X(lerpf(Z_FROM_X, Z_TO_X, u) + 4 * sinf(TAU * u * 1.5f + k));
+    zY[k] = v.Y(lerpf(Z_FROM_Y, Z_TO_Y, u));
     zA[k] = zK * smooth(u / 0.15f) * (1 - smooth((u - 0.7f) / 0.3f));
     float h = (Z_HALF + Z_STROKE) * zS[k];
     zx0 = minf(zx0, zX[k] - h); zx1 = maxf(zx1, zX[k] + h);
@@ -564,9 +662,8 @@ FACE_HOT void background(const Frame &f, float x, float y, float *pr, float *pg,
       r += (1 - r) * h; g += (1 - g) * h; b += (1 - b) * h;
     }
   }
-  float vx = x - VIG_CX, vy = y - VIG_CY;
-  float v = 1 - VIG_AMOUNT * smooth((vx * vx + vy * vy - VIG_R0 * VIG_R0) *
-                                    (1.0f / (VIG_R1 * VIG_R1 - VIG_R0 * VIG_R0)));
+  float vx = x - f.vigX, vy = y - f.vigY;
+  float v = 1 - VIG_AMOUNT * smooth((vx * vx + vy * vy - f.vigR0sq) * f.vigInv);
   *pr = r * v; *pg = g * v; *pb = b * v;
 }
 
@@ -611,7 +708,7 @@ FACE_HOT void rippleAt(const Frame &f, float x, float y, float *sx, float *sy, f
     float vx = x - r.ox, vy = y - r.oy, d2 = vx * vx + vy * vy;
     if (d2 >= r.out2 || d2 <= r.in2) continue;
     float d = SQ(d2);
-    float u = (d - r.R + RIPPLE_W) * ((RIPPLE_LUT - 1) / RIPPLE_W);
+    float u = (d - r.R + f.rippleW) * f.rippleLutK;
     int k = (int)u;
     if (k < 0 || k >= RIPPLE_LUT - 1) continue;
     float t = u - k;
@@ -651,13 +748,13 @@ FACE_HOT uint16_t shadePixel(const Frame &f, float x, float y, float sx, float s
   float k = 0;
   if (dotsOn) {
     for (int i = 0; i < 3; i++) {
-      float dx = sx - DOT_X[i], dy = sy - DOT_Y[i];
+      float dx = sx - f.dotX[i], dy = sy - f.dotY[i];
       k = maxf(k, clamp01(0.5f - (SQ(dx * dx + dy * dy) - f.dotRad[i])) * f.dotK[i]);
     }
   }
   if (markOn) k = maxf(k, clamp01(0.5f - markDistance<SQ>(f, sx, sy)) * f.markK);
   if (veinOn) {
-    float dv = sdVein<SQ>((sx - VEIN_X) * f.veinInv, (sy - VEIN_Y) * f.veinInv) * f.veinScale;
+    float dv = sdVein<SQ>((sx - f.veinX) * f.veinInv, (sy - f.veinY) * f.veinInv) * f.veinScale;
     k = maxf(k, clamp01(0.5f - dv) * f.veinK);
   }
   if (k > 0) { cr += (kr - cr) * k; cg += (kg - cg) * k; cb += (kb - cb) * k; }
@@ -819,16 +916,23 @@ class Engine {
   // (-) / forward (+). The eyes fall that way.
   void setTilt(float x, float y) { tiltX = clampf(x, -1, 1); tiltY = clampf(y, -1, 1); }
 
+  // Where on the screen this face is drawn (see View). Changing it redraws
+  // the whole panel next frame.
+  void setView(const View &v) { view = v; }
+  const View &getView() const { return view; }
+  char status() const { return state; }
+
   // MAICA was tapped: 'T' on top (its head), 'B' bottom, 'L' left, 'R'
   // right, 'C' on its face or back. A ripple spreads from there, and the
   // eyes wince and get knocked away from the hit.
   void poke(char side, uint32_t now) {
-    float ox = 120, oy = 116;
+    // Just outside the panel's edge on that side (in face coordinates).
+    float ox = 120, oy = 116, out = 12 / view.s;
     switch (side) {
-      case 'T': oy = -12; break;
-      case 'B': oy = 252; break;
-      case 'L': ox = -12; break;
-      case 'R': ox = 252; break;
+      case 'T': oy = view.vy0() - out; break;
+      case 'B': oy = view.vy1() + out; break;
+      case 'L': ox = view.vx0() - out; break;
+      case 'R': ox = view.vx1() + out; break;
     }
     Ripple &r = ripples[nextRipple];
     nextRipple = (nextRipple + 1) % MAX_RIPPLES;
@@ -902,11 +1006,14 @@ class Engine {
     float open = minf(minf(blinkOpenness(now), p.lid), 1 - (1 - FLINCH_LID) * wince);
 
     float ph = TAU * (now % BREATH_MS) / BREATH_MS;
-    fr.prepare(drawn, open, 1 + BREATH_SCALE * sinf(ph), -BREATH_FLOAT_PX * sinf(ph), now);
+    fr.prepare(drawn, open, 1 + BREATH_SCALE * sinf(ph), -BREATH_FLOAT_PX * sinf(ph), now, view);
+    fr.rippleW = RIPPLE_W * view.s;
+    fr.rippleLutK = (RIPPLE_LUT - 1) / fr.rippleW;
 
     // What to redraw: each dark shape where it is now and where it was last
     // frame...
     fr.nRegions = 0;
+    if (!view.same(lastView)) { fullRedraw = true; lastView = view; }  // moved or resized: all of it
     if (fullRedraw) { addRegion(FULL_SCREEN); fullRedraw = false; }
     for (int i = 0; i < 2; i++) { addRegion(unite(fr.eye[i].box, prevEye[i])); prevEye[i] = fr.eye[i].box; }
     addRegion(unite(fr.dotsBox, prevDots));
@@ -934,6 +1041,9 @@ class Engine {
       if (u >= 1) done = i;
     }
     if (done >= 0) {
+      // If the face has grown since that wipe started, it never reached the
+      // new parts: redraw them in the colour it leaves behind.
+      if (!covers(wipes[done])) addRegion(FULL_SCREEN);
       baseR = wipes[done].r; baseG = wipes[done].g; baseB = wipes[done].b;
       removeWipes(0, done + 1);
     }
@@ -945,8 +1055,8 @@ class Engine {
       if ((int32_t)(now - w.start) <= 0) continue;
       WipeGeo &g = fr.wipes[fr.nWipes++];
       g.kind = w.kind;
-      g.ox = w.ox; g.oy = w.oy;
-      g.front = w.front;
+      g.ox = view.X(w.ox); g.oy = view.Y(w.oy);
+      g.front = w.kind == WIPE_STRIP ? view.X(w.front) : w.kind == WIPE_RADIAL ? w.front * view.s : w.front;
       g.fc = cosf(w.front); g.fs = sinf(w.front);
       g.r = w.r; g.g = w.g; g.b = w.b;
       // The clock's seam fades as it closes, so its last sliver lands cleanly.
@@ -961,13 +1071,14 @@ class Engine {
       Ripple &r = ripples[i];
       if (!r.active) continue;
       float t = (float)(int32_t)(now - r.start);
-      float R = RIPPLE_SPEED * t / 1000.0f;
-      addRing(r.ox, r.oy, minf(r.R, R) - RIPPLE_W - 2, maxf(r.R, R) + 2);
+      float R = RIPPLE_SPEED * t / 1000.0f, S = view.s;
+      float ox = view.X(r.ox), oy = view.Y(r.oy);
+      addRing(ox, oy, (minf(r.R, R) - RIPPLE_W) * S - 2, maxf(r.R, R) * S + 2);
       r.R = R;
       if (t >= RIPPLE_MS) { r.active = false; continue; }
       float fade = (1 - t / RIPPLE_MS) * (1 - t / RIPPLE_MS);
-      float in = maxf(R - RIPPLE_W, 0);
-      fr.ripples[fr.nRipples++] = {r.ox, r.oy, R, in * in, R * R, RIPPLE_AMP * fade, RIPPLE_LIGHT * fade};
+      float in = maxf(R - RIPPLE_W, 0) * S;
+      fr.ripples[fr.nRipples++] = {ox, oy, R * S, in * in, R * S * R * S, RIPPLE_AMP * fade * S, RIPPLE_LIGHT * fade};
     }
     if (fr.nRipples && !rippleLutReady) {
       // One packet of waves, unit strength: a smooth hump of RIPPLE_W px
@@ -988,7 +1099,8 @@ class Engine {
   struct Wipe {
     uint8_t kind;
     bool inOut;            // eased in and out (else fast start, slow finish)
-    float ox, oy, reach;   // origin; radial: radius that clears every corner, seam included
+    float ox, oy, reach;   // origin; radial: radius that clears the panel's corners, seam included
+    float from, to;        // strip: where its front starts and ends (just off the panel)
     uint32_t start, dur;
     float r, g, b, hl;
     float progress, front; // as of the last update
@@ -996,6 +1108,7 @@ class Engine {
 
   char state = 'D', prevState = 'D';
   bool first = true, appearing = false, moving = false, fullRedraw = false;
+  View view = VIEW_FULL, lastView = VIEW_FULL;
   uint32_t t0 = 0, dur = 1;
   Pose from{}, shown{};
   Wipe wipes[MAX_WIPES] = {};
@@ -1058,6 +1171,27 @@ class Engine {
     float rightWall = p.mark > 0.5f ? MARK_X - TILT_MARK_WALL_PX : 240 - TILT_WALL_PX;
     wall(&fallX, &fallVX, TILT_WALL_PX - (cx - dx - hw), rightWall - (cx + dx + hw));
     wall(&fallY, &fallVY, TILT_WALL_PX - (cy - dy - hh), 240 - TILT_WALL_PX - (cy + dy + hh));
+#if FACE_ROUND
+    // ...and the circle: the farthest corner of the eyes' box stays inside
+    // TILT_ROUND_R. Pull the fall back along itself to the largest that fits
+    // (never pushing eyes that rest outside it), and bounce off the rim.
+    float ex = dx + hw, ey = dy + hh;
+    auto fits = [&](float k) {
+      for (int i = 0; i < 4; i++) {
+        float px = cx + (i & 1 ? ex : -ex) + fallX * k - 120, py = cy + (i & 2 ? ey : -ey) + fallY * k - 120;
+        if (px * px + py * py > TILT_ROUND_R * TILT_ROUND_R) return false;
+      }
+      return true;
+    };
+    if (fits(0) && !fits(1)) {
+      float lo = 0, hi = 1;
+      for (int i = 0; i < 10; i++) { float m = (lo + hi) / 2; (fits(m) ? lo : hi) = m; }
+      float out = fallVX * fallX + fallVY * fallY;  // moving outward?
+      fallX *= lo;
+      fallY *= lo;
+      if (out > 0) { fallVX *= -TILT_BOUNCE; fallVY *= -TILT_BOUNCE; }
+    }
+#endif
   }
 
   // Keep pos within [lo, hi] (never pushing eyes that rest past a wall),
@@ -1097,10 +1231,10 @@ class Engine {
     w.kind = kind;
     w.inOut = inOut;
     w.ox = ox; w.oy = oy;
-    float reach = 0;
-    const float cxs[4] = {0, 240, 0, 240}, cys[4] = {0, 0, 240, 240};
-    for (int i = 0; i < 4; i++) reach = maxf(reach, sqrtf((cxs[i] - ox) * (cxs[i] - ox) + (cys[i] - oy) * (cys[i] - oy)));
-    w.reach = reach + SEAM_PX + 2;
+    float m = (SEAM_PX + 2) / view.s;  // the seam, in face units
+    w.reach = cornerReach(ox, oy) + m;
+    w.from = view.vx0() - m;
+    w.to = view.vx1() + m;
     w.start = start;
     w.dur = ms ? ms : 1;
     w.r = r; w.g = g; w.b = b;
@@ -1115,44 +1249,68 @@ class Engine {
   }
 
   static float frontOf(const Wipe &w, float f) {
-    if (w.kind == WIPE_STRIP) return stripFront(f);
+    if (w.kind == WIPE_STRIP) return lerpf(w.from, w.to, f);
     if (w.kind == WIPE_CLOCK) return f * TAU;
     return f * w.reach;
   }
 
+  // Farthest corner of the panel from (ox, oy), in face units.
+  float cornerReach(float ox, float oy) const {
+    const float xs[2] = {view.vx0(), view.vx1()}, ys[2] = {view.vy0(), view.vy1()};
+    float r = 0;
+    for (int i = 0; i < 4; i++) {
+      float dx = xs[i & 1] - ox, dy = ys[i >> 1] - oy;
+      r = maxf(r, sqrtf(dx * dx + dy * dy));
+    }
+    return r;
+  }
+
+  // Whether a finished wipe covered the whole of the current panel.
+  bool covers(const Wipe &w) const {
+    float m = (SEAM_PX + 2) / view.s;
+    if (w.kind == WIPE_STRIP) return w.to >= view.vx1() + m * 0.5f;
+    if (w.kind == WIPE_RADIAL) return w.reach >= cornerReach(w.ox, w.oy) + m * 0.5f;
+    return true;  // a full turn covers everything
+  }
+
+  // Regions are clipped to this face's panel: it never draws on the other's.
   void addRegion(const Rect &r) {
-    if (r.empty() || fr.nRegions >= MAX_REGIONS) return;
+    Rect c = intersect(r, view.panel());
+    if (c.empty() || fr.nRegions >= MAX_REGIONS) return;
     Region &g = fr.regions[fr.nRegions++];
-    g.box = r;
+    g.box = c;
     g.ring = false;
     g.ox = g.oy = g.r0 = g.r1 = 0;
   }
 
-  // The ring between radii r0 and r1 around (ox, oy).
+  // The ring between radii r0 and r1 around (ox, oy), in screen pixels.
   void addRing(float ox, float oy, float r0, float r1) {
     if (r1 <= 0 || fr.nRegions >= MAX_REGIONS) return;
+    Rect c = intersect(boxAround(ox - r1, oy - r1, ox + r1, oy + r1, 1), view.panel());
+    if (c.empty()) return;
     Region &g = fr.regions[fr.nRegions++];
     g.ring = true;
     g.ox = ox; g.oy = oy;
     g.r0 = maxf(r0, 0);
     g.r1 = r1;
-    g.box = boxAround(ox - r1, oy - r1, ox + r1, oy + r1, 1);
+    g.box = c;
   }
 
   // The band a wipe's front (and its seam) swept between a and b.
   void addBand(const Wipe &w, float a, float b) {
     if (a == b) return;
-    const float m = SEAM_PX + 2;
+    const float m = SEAM_PX + 2;  // screen pixels
     float lo = minf(a, b), hi = maxf(a, b);
+    float ox = view.X(w.ox), oy = view.Y(w.oy);
     if (w.kind == WIPE_STRIP) {
-      addRegion(boxAround(lo, 0, hi, 240, m));
+      addRegion(boxAround(view.X(lo), 0, view.X(hi), 240, m));
     } else if (w.kind == WIPE_RADIAL) {
-      addRing(w.ox, w.oy, lo - m, hi + m);
+      addRing(ox, oy, lo * view.s - m, hi * view.s + m);
     } else {
-      // Clock: the sector between the two angles, out past the corners.
-      float R = 175, x0 = w.ox, x1 = w.ox, y0 = w.oy, y1 = w.oy;
+      // Clock: the sector between the two angles, out past the panel's corners.
+      float R = cornerReach(w.ox, w.oy) * view.s + 2, x0 = ox, x1 = ox, y0 = oy, y1 = oy;
       auto add = [&](float ang) {
-        float px = w.ox + R * sinf(ang), py = w.oy - R * cosf(ang);
+        float px = ox + R * sinf(ang), py = oy - R * cosf(ang);
         x0 = minf(x0, px); x1 = maxf(x1, px); y0 = minf(y0, py); y1 = maxf(y1, py);
       };
       add(lo);
@@ -1406,6 +1564,161 @@ class Engine {
       }
     }
     return p;
+  }
+};
+
+// ---- Faces: one face, or two side by side ------------------------------------
+//
+// While two AI apps are busy at once, MAICA's face splits in two, one per
+// app: the face shrinks into the left half while a second face grows out of
+// the seam into the right half (with a little springy overshoot), a dark
+// seam between them, each showing its own app's status. When one is done,
+// its half is squeezed out and the other grows back to fill the screen.
+// Taps and tilt reach both faces. With one face this is just the Engine.
+
+const int SPLIT_SEAM = 119, SEAM_GAP = 2;  // split: left face x 0..118, seam 119..120, right 121..239
+const uint32_t SPLIT_MS = 700, MERGE_MS = 600;
+
+class Faces {
+ public:
+  void seed(uint32_t s) {
+    seedBase = s;
+    eng[0].seed(s);
+    eng[1].seed(s ^ 0x5bd1e995u);
+  }
+
+  // The merged status: what the single face shows (and, while split, what
+  // to show once the faces merge again). snap = first appearance.
+  void setState(char st, uint32_t now, bool snap) {
+    merged = st;
+    if (snap) {
+      mode = ONE;
+      seam = 240;
+      eng[main].setView(VIEW_FULL);
+      eng[main].setState(st, now, true);
+      return;
+    }
+    if (mode == ONE) eng[main].setState(st, now, false);
+  }
+
+  // Split into two faces showing st[0] (left) and st[1] (right) -- 'A',
+  // 'T', 'Q' or 'D' -- or, with n < 2, back to one face.
+  void setSplit(int n, const char *st, uint32_t now) {
+    if (n >= 2) {
+      if (mode == ONE) {
+        // The face moves left; a new one grows out of the seam on the right.
+        int other = 1 - main;
+        eng[other].~Engine();
+        new (&eng[other]) Engine();
+        eng[other].seed(seedBase ^ (now * 2654435761u));
+        eng[other].setView(rightView(240));
+        eng[other].setState(st[1], now, true);
+        eng[main].setState(st[0], now, false);
+        animate(SPLITTING, SPLIT_SEAM, SPLIT_MS, now);
+      } else {
+        eng[main].setState(st[0], now, false);
+        eng[1 - main].setState(st[1], now, false);
+        if (mode == MERGING) animate(SPLITTING, SPLIT_SEAM, SPLIT_MS, now);  // back apart
+      }
+    } else if (mode == SPLITTING || mode == SPLIT) {
+      // Keep the face that's still busy -- the left one if both or neither are.
+      keepRight = busy(eng[1 - main].status()) && !busy(eng[main].status());
+      animate(MERGING, keepRight ? -SEAM_GAP : 240, MERGE_MS, now);
+    }
+  }
+
+  void setTilt(float x, float y) {
+    eng[0].setTilt(x, y);
+    eng[1].setTilt(x, y);
+  }
+
+  void poke(char side, uint32_t now) {
+    eng[main].poke(side, now);
+    if (mode != ONE) eng[1 - main].poke(side, now);
+  }
+
+  float sleepiness() const { return mode == ONE ? eng[main].sleepiness() : 0; }
+  bool isSplit() const { return mode != ONE; }
+
+  // Advance to `now`. Then draw each face's regions with its own frame, and
+  // paint the divider dark if it moved.
+  void update(uint32_t now) {
+    if (mode == SPLITTING || mode == MERGING) {
+      float u = clamp01((float)(int32_t)(now - animAt) / animMs);
+      float e = mode == SPLITTING ? spring(u) : smooth(u);
+      seam = (int)floorf(lerpf((float)seamFrom, (float)seamTo, e) + 0.5f);
+      if (u >= 1) {
+        seam = seamTo;
+        if (mode == SPLITTING) {
+          mode = SPLIT;
+        } else {
+          if (keepRight) main = 1 - main;
+          mode = ONE;
+          seam = 240;
+          if (merged != eng[main].status()) eng[main].setState(merged, now, false);
+        }
+      }
+    }
+    if (mode == ONE) {
+      eng[main].setView(VIEW_FULL);
+      eng[main].update(now);
+    } else {
+      eng[main].setView(leftView(seam));
+      eng[1 - main].setView(rightView(seam));
+      eng[main].update(now);
+      eng[1 - main].update(now);
+    }
+    Rect d = mode == ONE ? Rect{0, 0, 0, 0} : intersect({seam, 0, seam + SEAM_GAP, 240}, FULL_SCREEN);
+    dividerDirty = !(d.x0 == divider.x0 && d.x1 == divider.x1 && d.y0 == divider.y0 && d.y1 == divider.y1) ||
+                   (mode != ONE && !dividerShown);
+    dividerShown = mode != ONE;
+    divider = d;
+  }
+
+  int count() const { return mode == ONE ? 1 : 2; }
+  // Face i's frame: 0 = the main (left) face, 1 = the right one.
+  const Frame &frame(int i) const { return eng[i == 0 ? main : 1 - main].frame(); }
+  // Which face draws screen pixel (x, y): 0, 1, or -1 for the divider.
+  int ownerOf(int x, int y) const {
+    (void)y;
+    if (mode == ONE) return 0;
+    if (x < seam) return 0;
+    return x >= seam + SEAM_GAP ? 1 : -1;
+  }
+
+  Rect divider = {0, 0, 0, 0};  // the dark seam between the faces
+  bool dividerDirty = false;    // paint it this frame
+
+ private:
+  enum Mode { ONE, SPLITTING, SPLIT, MERGING };
+  Engine eng[2];
+  int main = 0;
+  Mode mode = ONE;
+  char merged = 'D';
+  bool keepRight = false, dividerShown = false;
+  int seam = 240, seamFrom = 240, seamTo = 240;
+  uint32_t animAt = 0, animMs = 1, seedBase = 1;
+
+  static bool busy(char st) { return st == 'A' || st == 'T' || st == 'Q'; }
+
+  void animate(Mode m, int to, uint32_t ms, uint32_t now) {
+    mode = m;
+    seamFrom = seam;
+    seamTo = to;
+    animAt = now;
+    animMs = ms;
+  }
+
+  // The left face fills 0..xs, the right one xs+SEAM_GAP..240; each is drawn
+  // at the scale that fits its width, centred in its half.
+  static View leftView(int xs) {
+    float w = (float)(xs > 1 ? xs : 1);
+    return {0, 0, (float)(xs > 0 ? xs : 0), 240, w / 240, w / 2, 120};
+  }
+  static View rightView(int xs) {
+    int x0 = xs + SEAM_GAP < 240 ? xs + SEAM_GAP : 240;
+    float w = (float)(240 - x0 > 1 ? 240 - x0 : 1);
+    return {(float)x0, 0, 240, 240, w / 240, x0 + w / 2, 120};
   }
 };
 

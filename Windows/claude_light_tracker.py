@@ -136,6 +136,30 @@ class Light:
         lost state byte self-heals within seconds."""
         pass
 
+    def show_faces(self, states) -> None:
+        """Split-face displays (the MAICA screen): one face per busy app when
+        two are busy at once -- `states` is [left, right] -- or [] for a
+        single face showing the merged state from show(). Lights without a
+        screen ignore this (default no-op)."""
+        pass
+
+
+# Split-face frame: "<" + one lowercase letter per face + ">", e.g. b"<at>"
+# for analyzing on the left and thinking on the right, b"<>" for one face.
+# Firmware that predates it only acts on uppercase A/T/Q/D, so it ignores
+# these bytes entirely.
+_FACE_LETTERS = {
+    State.ANALYZING: b"a",
+    State.THINKING: b"t",
+    State.QUESTION: b"q",
+    State.DONE: b"d",
+    State.IDLE: b"d",
+}
+
+
+def faces_frame(states) -> bytes:
+    return b"<" + b"".join(_FACE_LETTERS[s] for s in states) + b">"
+
 
 class ConsoleLight(Light):
     """Prints a colored block + label to the terminal. Zero setup required."""
@@ -143,6 +167,12 @@ class ConsoleLight(Light):
     def show(self, state: State) -> None:
         color = STATE_COLORS[state]
         print(f"{color}  {state.value.upper():^11}  {RESET}")
+
+    def show_faces(self, states) -> None:
+        if states:
+            print("[faces] split: " + " | ".join(s.value.upper() for s in states))
+        else:
+            print("[faces] one face")
 
 
 class GPIOLight(Light):
@@ -208,6 +238,10 @@ class ArduinoLight(Light):
 
     def show(self, state: State) -> None:
         self.ser.write(self._COMMANDS[state])
+        self.ser.flush()
+
+    def show_faces(self, states) -> None:
+        self.ser.write(faces_frame(states))
         self.ser.flush()
 
     def close(self) -> None:
@@ -354,6 +388,16 @@ class BLELight(Light):
         future.result(timeout=5)
         self._last_state = state
         self._last_send = time.monotonic()
+
+    def show_faces(self, states) -> None:
+        # Its own write: BLE firmware reads only the first byte of each write,
+        # so older boards see "<" and ignore it.
+        data = faces_frame(states)
+
+        async def _write():
+            await self.client.write_gatt_char(self.RX_CHAR_UUID, data, response=True)
+
+        self._asyncio.run_coroutine_threadsafe(_write(), self._loop).result(timeout=5)
 
     # Heartbeat interval: re-send the current state periodically as a
     # keepalive so the firmware can detect ghost connections AND so bleak

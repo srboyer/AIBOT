@@ -1,5 +1,24 @@
 /*
-  maica_status_classicbt.ino  --  v9 (MAICA PCB, ESP32-WROVER-E)
+  maica_status_classicbt.ino  --  v11 (MAICA PCB, ESP32-WROVER-E)
+
+  v11: round screen. SCREEN_ROUND 1 drives Adafruit's 1.28" 240x240 round
+  GC9A01A display (product 6178) instead of the 1.54" square ST7789 (3787).
+  Both are EYESPI boards on the same pins and the same Type A cable, and the
+  same resolution, so the face is unchanged except for its layout: on a
+  round screen the thought bubbles, "!", anger mark, Zs and "no computer"
+  dot move inside the circle, the eyes can't tilt into the missing corners,
+  and the edge darkening frames the circle (FACE_ROUND in maica_face.h).
+  Needs the "Adafruit GC9A01A" library. SCREEN_ROUND 0 puts it all back.
+
+  v10: two faces. While two AI apps are busy at once (say a Claude desktop
+  chat and a ChatGPT prompt), the face splits in two, one per app, each
+  showing its own status: the face shrinks into the left half while a
+  second one springs out of the seam on the right. When one app finishes,
+  its face shows a quick green "done" and is squeezed out as the other
+  grows back to fill the screen. The PC watcher sends the split as
+  "<" + one lowercase letter per face + ">" -- e.g. "<at>" for analyzing on
+  the left and thinking on the right, "<>" for one face -- alongside the
+  usual single status byte (older firmware ignores it).
 
   v9: moods. Keep tapping MAICA and it gets angrier: the idle green bleeds
   toward red from each hit (through yellow and orange, red by the sixth tap
@@ -97,10 +116,12 @@
   connector, so it needs a SAME-SIDE (Type A) 18-pin 0.5mm cable -- not
   Adafruit's own "A-B" EYESPI cable, which reverses the pins on this board.
 
-  Target screen: Adafruit 240x240 ST7789 with EYESPI connector (1.54" is
-  product 3787; the 1.3" version uses the identical init). Required libraries
-  (Library Manager): "Adafruit ST7735 and ST7789 Library", "Adafruit GFX
-  Library", "Adafruit BusIO".
+  Screens (SCREEN_ROUND picks one), both Adafruit 240x240 with an EYESPI
+  connector: the 1.28" round GC9A01A (product 6178) or the 1.54" square
+  ST7789 (3787; the 1.3" version uses the identical init). Required
+  libraries (Library Manager): "Adafruit GC9A01A" (round) or "Adafruit
+  ST7735 and ST7789 Library" (square), plus "Adafruit GFX Library" and
+  "Adafruit BusIO".
 
   v1: Classic Bluetooth (SPP) status firmware. Protocol is identical to
   claude_matrix_esp32_classicbt.ino, so the PC side drives it unchanged --
@@ -119,16 +140,26 @@
   PSRAM, so the boot-log "PSRAM ID read error" doesn't affect it.
 */
 
+// Which screen: 1 = Adafruit 1.28" 240x240 round GC9A01A (product 6178),
+// 0 = Adafruit 1.54" 240x240 square ST7789 (product 3787). Same EYESPI pins
+// and cable either way; the face's layout follows (FACE_ROUND).
+#define SCREEN_ROUND 1
+
 #include "BluetoothSerial.h"
 #include <SPI.h>
 #include <Adafruit_GFX.h>
+#if SCREEN_ROUND
+#include <Adafruit_GC9A01A.h>
+#else
 #include <Adafruit_ST7789.h>
+#endif
 #include <Wire.h>
 
 // Moods: how long MAICA can sit idle with nothing happening before it gets
 // bored, and before it falls asleep (seconds). Set before maica_face.h.
 #define FACE_BORED_AFTER_S  300
 #define FACE_SLEEP_AFTER_S 1800
+#define FACE_ROUND SCREEN_ROUND
 #include "maica_face.h"
 #include "maica_tilt.h"
 
@@ -196,9 +227,15 @@
 
 // RGB565 from 8-bit R, G, B (boot splash).
 #define RGB(r, g, b) (uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3))
+#define BLACK RGB(0, 0, 0)
+#define WHITE RGB(255, 255, 255)
 
 BluetoothSerial SerialBT;
+#if SCREEN_ROUND
+Adafruit_GC9A01A tft(&SPI, TFT_DC, TFT_CS, TFT_RST);  // note: this library takes DC before CS
+#else
 Adafruit_ST7789 tft(&SPI, TFT_CS, TFT_DC, TFT_RST);
+#endif
 
 // Written by the Bluetooth event callback (BT task), read by loop() --
 // volatile so loop() always sees fresh values.
@@ -211,6 +248,14 @@ unsigned long disconnectedAt = 0;
 
 char currentState = 'D';
 char lastState = 0;          // forces an initial draw
+
+// Split faces, from "<..>" frames: how many faces the PC asked for (2 = split)
+// and their statuses, applied once the face is on screen.
+int splitCount = 0;
+char splitStates[2] = {'D', 'D'};
+bool splitChanged = false;
+int frameLen = -1;           // >= 0 while reading a frame
+char frameBuf[4];
 bool lastConnected = false;  // detects connect/disconnect edges in loop()
 
 const char *stateName(char s) {
@@ -227,7 +272,7 @@ bool displayConnected = false;  // drives the face's "no computer" dot
 
 // -- The animated face (every state; see maica_face.h) ------------------------
 
-face::Engine faceEngine;
+face::Faces faces;            // one face, or two side by side (see maica_face.h)
 uint16_t lineBuf[240];        // one row of pixels at a time -- no framebuffer
 bool faceShown = false;       // false until the face first replaces the boot splash
 unsigned long lastFaceFrame = 0;
@@ -270,16 +315,23 @@ void faceRenderRegion(const face::Region &g, const face::Frame &f) {
   tft.endWrite();
 }
 
-// One animation frame: the engine works out what changed since the last frame
-// (the eyes where they are now and were, each wipe's moving band) and only
-// that is redrawn.
+// One animation frame: each face works out what changed since the last frame
+// (its eyes where they are now and were, each wipe's moving band) and only
+// that is redrawn, each within its own half when split. Then the dark seam
+// between two faces, if it moved.
 void faceFrame(unsigned long now) {
 #if FACE_STATS
   unsigned long t0 = micros();
 #endif
-  faceEngine.update(now);
-  const face::Frame &f = faceEngine.frame();
-  for (int i = 0; i < f.nRegions; i++) faceRenderRegion(f.regions[i], f);
+  faces.update(now);
+  for (int k = 0; k < faces.count(); k++) {
+    const face::Frame &f = faces.frame(k);
+    for (int i = 0; i < f.nRegions; i++) faceRenderRegion(f.regions[i], f);
+  }
+  if (faces.dividerDirty && !faces.divider.empty()) {
+    const face::Rect &d = faces.divider;
+    tft.fillRect(d.x0, d.y0, d.x1 - d.x0, d.y1 - d.y0, BLACK);
+  }
   lastFaceFrame = now;
 #if FACE_STATS
   statMicros += micros() - t0;
@@ -301,8 +353,8 @@ void faceFrame(unsigned long now) {
 // computing pixels vs. pushing them over SPI, over the area the eyes take.
 // Draws a black rectangle over the splash, which is cleared right after anyway.
 void faceBenchmark() {
-  faceEngine.update(millis());
-  const face::Frame &f = faceEngine.frame();
+  faces.update(millis());
+  const face::Frame &f = faces.frame(0);
   face::Rect b = face::unite(f.eye[0].box, f.eye[1].box);
   int w = b.x1 - b.x0, h = b.y1 - b.y0;
   unsigned long px = (unsigned long)w * h;
@@ -331,12 +383,13 @@ void faceBenchmark() {
 void showFace(char state, unsigned long now) {
   bool appearing = !faceShown;
   if (appearing) {
-    tft.fillScreen(ST77XX_BLACK);
+    tft.fillScreen(BLACK);
     faceShown = true;
   }
-  faceEngine.setState(state, now, appearing);
+  faces.setState(state, now, appearing);
   faceFrame(now);
-  faceRenderRegion({face::LINK_BOX, false, 0, 0, 0, 0}, faceEngine.frame());  // draw or erase the "no computer" dot
+  int owner = faces.ownerOf(face::LINK_BOX.x0, face::LINK_BOX.y0);  // draw or erase the "no computer" dot
+  if (owner >= 0) faceRenderRegion({face::LINK_BOX, false, 0, 0, 0, 0}, faces.frame(owner));
 }
 
 // -- Accelerometer -----------------------------------------------------------
@@ -437,13 +490,13 @@ void tiltUpdate(unsigned long now) {
   if (!accelRead(g)) return;
   tilt::Vec3 s = {chipAxis(g, ACCEL_SCREEN_X), chipAxis(g, ACCEL_SCREEN_Y), chipAxis(g, ACCEL_SCREEN_Z)};
   tiltTracker.feed(s, dt);
-  faceEngine.setTilt(tiltTracker.x(), tiltTracker.y());
+  faces.setTilt(tiltTracker.x(), tiltTracker.y());
 
   uint8_t src;
   if (accelReadRegs(LIS_TAP_SRC, &src, 1) && (src & 0x40) && now - lastTap > 150) {  // TAP_IA (reading clears it)
     lastTap = now;
     char side = tapSide(src);
-    faceEngine.poke(side, now);
+    faces.poke(side, now);
     Serial.printf("[tap] on the %s (chip %c%c)\n", side == 'T' ? "head" : side == 'B' ? "bottom" : side == 'L' ? "left"
                   : side == 'R' ? "right" : "face/back", (src & 0x04) ? 'X' : (src & 0x02) ? 'Y' : 'Z',
                   (src & 0x08) ? '-' : '+');
@@ -464,33 +517,45 @@ void tiltUpdate(unsigned long now) {
 
 // Colour bars + name for ~1s at boot: confirms power, SPI, colour order (each
 // bar should match its label) and orientation (text upright) at a glance.
+// On the round screen everything sits inside the circle.
 void drawSplash() {
-  tft.fillScreen(ST77XX_BLACK);
-  tft.fillRect(0, 150, 80, 90, RGB(255, 0, 0));
-  tft.fillRect(80, 150, 80, 90, RGB(0, 255, 0));
-  tft.fillRect(160, 150, 80, 90, RGB(0, 0, 255));
-  tft.setTextColor(ST77XX_WHITE);
+  tft.fillScreen(BLACK);
+#if SCREEN_ROUND
+  const int bx = 36, bw = 56, by = 148, bh = 48, ty = 50;
+#else
+  const int bx = 0, bw = 80, by = 150, bh = 90, ty = 40;
+#endif
+  tft.fillRect(bx, by, bw, bh, RGB(255, 0, 0));
+  tft.fillRect(bx + bw, by, bw, bh, RGB(0, 255, 0));
+  tft.fillRect(bx + 2 * bw, by, bw, bh, RGB(0, 0, 255));
+  tft.setTextColor(WHITE);
   tft.setTextSize(5);
-  tft.setCursor(45, 40);
+  tft.setCursor(45, ty);            // 5 chars x 30px, centred
   tft.print("MAICA");
   tft.setTextSize(2);
-  tft.setCursor(54, 105);           // 11 chars x 12px = 132px, centred
-  tft.print("firmware v9");
-  tft.setTextColor(ST77XX_BLACK);
-  tft.setCursor(12, 188);  tft.print("RED");
-  tft.setCursor(92, 188);  tft.print("GRN");
-  tft.setCursor(172, 188); tft.print("BLU");
+  tft.setCursor(48, 105);           // 12 chars x 12px = 144px, centred
+  tft.print("firmware v11");
+  tft.setTextColor(BLACK);
+  const char *names[3] = {"RED", "GRN", "BLU"};
+  for (int i = 0; i < 3; i++) {     // 3 chars x 12px, centred in each bar
+    tft.setCursor(bx + i * bw + (bw - 36) / 2, by + (bh - 16) / 2);
+    tft.print(names[i]);
+  }
 }
 
 void displayBegin() {
   ledcAttach(TFT_LITE, 5000, 8);
   ledcWrite(TFT_LITE, BACKLIGHT_DUTY);
 
-  tft.init(240, 240);  // Adafruit 1.3" / 1.54" 240x240 ST7789
+#if SCREEN_ROUND
+  tft.begin(TFT_SPI_HZ);  // Adafruit 1.28" 240x240 round GC9A01A
+#else
+  tft.init(240, 240);     // Adafruit 1.3" / 1.54" 240x240 ST7789
   tft.setSPISpeed(TFT_SPI_HZ);
+#endif
   tft.setRotation(TFT_ROTATION);
 
-  faceEngine.seed(esp_random());
+  faces.seed(esp_random());
 
   drawSplash();
   delay(1000);
@@ -515,7 +580,7 @@ void displayAnimate(char state, unsigned long now) {
     faceFrame(now);
     // Dim the backlight as MAICA falls asleep; back up as it wakes.
     static int lastDuty = BACKLIGHT_DUTY;
-    int duty = BACKLIGHT_DUTY - (int)((BACKLIGHT_DUTY - SLEEP_BACKLIGHT_DUTY) * faceEngine.sleepiness() + 0.5f);
+    int duty = BACKLIGHT_DUTY - (int)((BACKLIGHT_DUTY - SLEEP_BACKLIGHT_DUTY) * faces.sleepiness() + 0.5f);
     if (duty != lastDuty) {
       ledcWrite(TFT_LITE, duty);
       lastDuty = duty;
@@ -540,12 +605,13 @@ void btEventCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
 void setup() {
   Serial.begin(115200);  // USB, status/debug output only -- commands come over Bluetooth
   delay(500);
-  Serial.println("\n=== MAICA status firmware v9 (Classic Bluetooth + ST7789) ===");
-  Serial.printf("Chip: %s rev %d, %d cores @ %d MHz\n",
-                ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores(), ESP.getCpuFreqMHz());
+  Serial.println("\n=== MAICA status firmware v11 (Classic Bluetooth) ===");
+  Serial.printf("Chip: %s rev %d, %d cores @ %lu MHz\n",
+                ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores(), (unsigned long)ESP.getCpuFreqMHz());
 
   displayBegin();
-  Serial.println("Screen initialised (240x240 ST7789 on EYESPI).");
+  Serial.println(SCREEN_ROUND ? "Screen initialised (1.28\" round 240x240 GC9A01A on EYESPI)."
+                              : "Screen initialised (1.54\" square 240x240 ST7789 on EYESPI).");
 
   accelOk = accelBegin();
   if (accelOk) Serial.println("Accelerometer ready (LIS2DW12): tilt MAICA and the eyes follow.");
@@ -561,8 +627,24 @@ void loop() {
   unsigned long now = millis();
 
   // Drain any pending command bytes. Re-sending the same state is harmless.
+  // "<..>" frames carry the split faces' statuses in lowercase.
   while (SerialBT.available()) {
     char cmd = SerialBT.read();
+    if (cmd == '<') { frameLen = 0; continue; }
+    if (frameLen >= 0) {
+      if (cmd == '>') {
+        int n = frameLen >= 2 ? 2 : 0;
+        for (int i = 0; i < n; i++) splitStates[i] = frameBuf[i] - 'a' + 'A';
+        if (n != splitCount || n) splitChanged = true;
+        splitCount = n;
+        frameLen = -1;
+      } else if (frameLen < 4 && (cmd == 'a' || cmd == 't' || cmd == 'q' || cmd == 'd')) {
+        frameBuf[frameLen++] = cmd;
+      } else {
+        frameLen = -1;  // not a frame after all
+      }
+      continue;
+    }
     if (cmd == 'A' || cmd == 'T' || cmd == 'Q' || cmd == 'D') {
       currentState = cmd;
     }
@@ -579,14 +661,23 @@ void loop() {
     }
   }
 
-  if (!connected && currentState != 'D' && (now - disconnectedAt > LINK_GRACE_MS)) {
+  if (!connected && (currentState != 'D' || splitCount) && (now - disconnectedAt > LINK_GRACE_MS)) {
     Serial.println("Disconnected past grace period -- reverting to idle.");
     currentState = 'D';
+    if (splitCount) { splitCount = 0; splitChanged = true; }
   }
 
   if (currentState != lastState || linkChanged) {
     displayState(currentState, connected);
     lastState = currentState;
+  }
+  if (splitChanged && faceShown) {
+    splitChanged = false;
+    if (splitCount == 2)
+      Serial.printf("[%7lu ms] two faces: %s | %s\n", millis(), stateName(splitStates[0]), stateName(splitStates[1]));
+    else
+      Serial.printf("[%7lu ms] one face\n", millis());
+    faces.setSplit(splitCount, splitStates, millis());
   }
   tiltUpdate(millis());
   displayAnimate(currentState, millis());

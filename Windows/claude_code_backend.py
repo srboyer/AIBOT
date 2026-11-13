@@ -85,6 +85,15 @@ silently swallowed and the light stuck on QUESTION indefinitely (observed
 live -- a Notification doesn't guarantee a matching UserPromptSubmit/
 PreToolUse ever follows).
 
+A multiple-choice question (the AskUserQuestion tool) also clears the hold
+the moment it's answered: its own PostToolUse is the answer arriving. Seen
+in a real session's hook history: PreToolUse(AskUserQuestion), then
+Notification(permission_prompt) as the question appears, then
+PostToolUse(AskUserQuestion) when answered -- and waiting for the NEXT
+PreToolUse after that kept the light red several seconds past the answer.
+Only that tool's PostToolUse counts: with tools running in parallel, some
+other tool finishing says nothing about a permission prompt still pending.
+
 INTERRUPTED/REJECTED TURNS -- Claude Code has no hook event for "the user
 hit Escape" or "the user rejected this tool call" specifically; when a turn
 ends that way, NO hook fires at all telling us it's over (confirmed by
@@ -139,6 +148,10 @@ EMPTY_RESULT = {
 # dies without firing anything at all. It must be far longer than any real
 # silent stretch -- at 90s it cut genuine long tool calls short.
 STALE_AFTER_SECONDS = 30 * 60.0
+
+# Claude Code's multiple-choice question tool. Its PostToolUse means you've
+# answered (see "QUESTION -> answer received" above).
+QUESTION_TOOL = "AskUserQuestion"
 
 
 class ClaudeCodeBackend(ChatBackend):
@@ -247,7 +260,8 @@ class ClaudeCodeBackend(ChatBackend):
             # silently swallowed by the `return result` below and the light
             # stuck on QUESTION forever, until whatever NEXT turn happened to
             # fire one of the other two events -- observed live.
-            if event in ("UserPromptSubmit", "PreToolUse"):
+            if event in ("UserPromptSubmit", "PreToolUse") or (
+                    event == "PostToolUse" and status.get("tool_name") == QUESTION_TOOL):
                 result["answer_received"] = True
                 self.awaiting_answer = False
                 self.busy = True

@@ -18,6 +18,11 @@ So if Claude is waiting on you (red) while ChatGPT is still generating
 flash never hides another app that's still busy. Closing or crashing one
 app never interrupts tracking of the others.
 
+A split-face display (the MAICA screen) goes further: while two apps are
+busy at once its face splits in two, one per app, each showing its own
+state (see FaceSlots). The merged state is still sent as before, so
+single-light boards are unaffected.
+
 To watch a different chatbot, write a new backend module and register it
 in BACKENDS below -- nothing else changes, including the firmware.
 
@@ -177,6 +182,39 @@ class BackendSlot:
             pass  # module vanished mid-run would be bizarre; keep old instance
 
 
+class FaceSlots:
+    """Which apps get their own face on a split-face display (the MAICA
+    screen): when two apps are busy at once, each gets half the screen.
+
+    There are two positions, left and right. An app that goes busy takes a
+    free position and keeps it while it works and through its DONE flash,
+    so a face never jumps sides; once it's idle its position frees up. With
+    one face or none left, the screen goes back to a single face (and that
+    face counts as the left one, so the next app to go busy splits off to
+    the right). A third busy app waits for a free position -- the merged
+    state still covers it.
+
+    update() returns [left_state, right_state] while split, else []."""
+
+    BUSY = (State.ANALYZING, State.THINKING, State.QUESTION)
+
+    def __init__(self):
+        self.positions = [None, None]
+
+    def update(self, slots):
+        by_name = {s.name: s for s in slots}
+        self.positions = [n if n is not None and by_name[n].state is not State.IDLE else None
+                          for n in self.positions]
+        for s in slots:
+            if s.state in self.BUSY and s.name not in self.positions and None in self.positions:
+                self.positions[self.positions.index(None)] = s.name
+        if None in self.positions:
+            # One face or none: back to a single face, which counts as the left.
+            self.positions = ([n for n in self.positions if n is not None] + [None, None])[:2]
+            return []
+        return [by_name[n].state for n in self.positions]
+
+
 def run_multi(backend_names, make_light, debug: bool = False):
     """make_light is a zero-arg factory (not a Light instance): this loop
     owns the light's lifecycle, so a BLE drop only costs the LIGHT a
@@ -186,8 +224,10 @@ def run_multi(backend_names, make_light, debug: bool = False):
     everything, so a question arriving during the outage was seen by the
     fresh backend and silently discarded."""
     slots = [BackendSlot(name) for name in backend_names]
+    face_slots = FaceSlots()
     light = None
     shown = None            # None forces a (re)send once a light exists
+    shown_faces = None      # likewise for the split-face frame
     next_light_attempt = 0.0
     light_connected_at = None  # for the link-duration autopsy on each drop
 
@@ -201,6 +241,7 @@ def run_multi(backend_names, make_light, debug: bool = False):
             try:
                 light = make_light()
                 shown = None  # repaint whatever state we're in
+                shown_faces = None
                 light_connected_at = time.monotonic()
                 print(f"[light] {time.strftime('%H:%M:%S')} link up.")
             except Exception as e:
@@ -218,13 +259,28 @@ def run_multi(backend_names, make_light, debug: bool = False):
             slot.tick(debug=debug)
 
         merged = max((s.state for s in slots), key=lambda st: STATE_PRIORITY[st])
+        faces = face_slots.update(slots)
 
         if debug:
             summary = ", ".join(
                 f"{s.name}={'?' if not s.connected else s.state.value}" for s in slots
             )
             light_desc = "light: reconnecting" if light is None else "light: ok"
-            print(f"[debug] {summary} -> showing {merged.value} ({light_desc})")
+            split = f", faces {' | '.join(f.value for f in faces)}" if faces else ""
+            print(f"[debug] {summary} -> showing {merged.value}{split} ({light_desc})")
+
+        if light is not None and faces != shown_faces:
+            if faces:
+                print("[faces] two faces: " + " | ".join(
+                    f"{n} {st.value}" for n, st in zip(face_slots.positions, faces)))
+            elif shown_faces:
+                print("[faces] back to one face")
+            try:
+                light.show_faces(faces)
+                shown_faces = faces
+            except Exception as e:
+                light = _drop_light(light, e, light_connected_at)
+                next_light_attempt = time.monotonic() + 2.0
 
         if light is not None and merged is not shown:
             try:

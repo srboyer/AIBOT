@@ -9,7 +9,8 @@ SessionEnd, UserPromptSubmit, PreToolUse, Notification, and Stop. Claude
 Code invokes it -- feeding a JSON payload on stdin -- every time one of
 those fires, and it just overwrites a small status file with the latest
 event. claude_code_backend.py polls that file; that's the entire
-"backend".
+"backend". (Also StopFailure, which Claude Code fires instead of Stop when
+an API error -- such as your usage limit running out -- ends the turn.)
 
 HOST LABEL, NOT A GATE -- Claude Code doesn't say anywhere in the hook
 payload itself what it's running inside, so that comes from the process
@@ -87,6 +88,17 @@ def main():
         "written_at": time.time(),
     }
 
+    if status["event"] == "StopFailure":
+        # Fires instead of Stop when an API error ended the turn. "error" is
+        # its kind (rate_limit, billing_error, overloaded, ...); the message
+        # is what Claude Code showed you, e.g. "You've hit your 5-hour limit
+        # · resets 3pm" -- the backend reads the reset time from it. Only
+        # kept for this event, and cut short: it's an error notice, but
+        # nothing else of the conversation belongs in this file.
+        status["error"] = payload.get("error")
+        status["error_details"] = _short(payload.get("error_details"))
+        status["last_assistant_message"] = _short(payload.get("last_assistant_message"))
+
     try:
         os.makedirs(os.path.dirname(STATUS_FILE), exist_ok=True)
         # Write to a temp file + replace rather than writing STATUS_FILE
@@ -102,6 +114,14 @@ def main():
         pass
 
     _append_history(status, payload)
+
+
+def _short(value, limit=300):
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = json.dumps(value)
+    return value[:limit]
 
 
 # A short rolling history of hook events next to STATUS_FILE, for diagnosing
@@ -120,6 +140,7 @@ def _append_history(status, payload):
             "event": status["event"],
             "tool": payload.get("tool_name"),
             "notification_type": status["notification_type"],
+            "error": status.get("error"),
             "session": (status["session_id"] or "")[:8],
         })
         with open(HISTORY_FILE, "a", encoding="utf-8") as f:

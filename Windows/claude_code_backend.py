@@ -45,8 +45,22 @@ states as follows:
                          though no Stop fired; see INTERRUPTED/REJECTED
                          TURNS below)
     Stop               -> finished               (DONE)
+    StopFailure        -> failed                 (straight to idle, no DONE
+                         flash -- an API error ended the turn; Claude Code
+                         fires it INSTEAD of Stop), plus limited when the
+                         error means the usage limit is used up (OUT OF
+                         TOKENS -- see below)
     SessionStart/SessionEnd -> connection lifecycle only, no state of their
                          own (see check_alive via SessionEnd below)
+
+OUT OF TOKENS -- a StopFailure whose error is "rate_limit" (a plan's 5-hour
+or weekly limit; Claude Code retries plain throttling itself) or
+"billing_error" (an API key out of credit) puts this app in LIMIT (see
+usage_limit.is_limit_error). It lasts until the reset time in Claude Code's
+message ("You've hit your 5-hour limit · resets 3pm"), or
+usage_limit.FALLBACK_HOLD if there's none, and ends early the moment a turn
+gets through (a tool call or a normal Stop). A limit still in force when
+the watcher connects is picked up from the status file.
 
 CAVEAT -- no true THINKING signal: hooks only fire around tool calls, not
 around plain-text reasoning between them. So THINKING here really means
@@ -126,6 +140,7 @@ Two mitigations, in order of how much they cover:
   (Claude Code's own Bash tool caps at 10 minutes).
 """
 
+import datetime
 import json
 import os
 import sys
@@ -133,6 +148,7 @@ import time
 
 from chat_backend import ChatBackend
 from claude_code_status_shared import STATUS_FILE
+from usage_limit import FALLBACK_HOLD, is_limit_error, parse_reset
 
 EMPTY_RESULT = {
     "prompt_sent": False,
@@ -168,6 +184,9 @@ class ClaudeCodeBackend(ChatBackend):
         self.busy = False
         self.last_event_at = time.monotonic()
         self.host = None  # informational only -- see module docstring
+        # Out of tokens (see OUT OF TOKENS above): until when, local time.
+        self.limited = False
+        self.limited_until = None
 
     # -- ChatBackend interface --------------------------------------------
 
@@ -190,6 +209,13 @@ class ClaudeCodeBackend(ChatBackend):
         self.busy = False
         self.last_event_at = time.monotonic()
         self.host = status.get("host")
+        # Unlike a turn, a usage limit outlives the moment it was reported:
+        # if the last thing that happened was hitting it, it may well still
+        # be in force.
+        self.limited = False
+        self.limited_until = None
+        if status.get("event") == "StopFailure":
+            self._note_failure(status)
         return True
 
     def connect(self):
@@ -210,6 +236,16 @@ class ClaudeCodeBackend(ChatBackend):
         pass
 
     def poll(self, debug: bool = False) -> dict:
+        result = self._poll_events(debug=debug)
+        if self.limited and self.limited_until is not None and datetime.datetime.now() >= self.limited_until:
+            if debug:
+                print(f"[debug] claude_code: usage limit reset time {self.limited_until:%H:%M} passed")
+            self.limited = False
+            self.limited_until = None
+        result["limited"] = self.limited
+        return result
+
+    def _poll_events(self, debug: bool = False) -> dict:
         result = dict(EMPTY_RESULT)
 
         mtime = self._mtime()
@@ -249,6 +285,24 @@ class ClaudeCodeBackend(ChatBackend):
                 "Claude Code session ended -- SessionEnd hook fired. "
                 "Restarting watcher to look for the next session."
             )
+
+        if event == "StopFailure":
+            # An API error ended the turn -- Claude Code fires this INSTEAD
+            # of Stop, so it's the turn's end, question or not. Back to idle
+            # without a "done" flash; out of tokens if that's what it was.
+            if debug:
+                print(f"[debug] claude_code: StopFailure error={status.get('error')!r}")
+            result["failed"] = True
+            self.awaiting_answer = False
+            self.busy = False
+            self._note_failure(status)
+            return result
+
+        # The API answered: a tool call or a normal end of turn means any
+        # usage limit is over.
+        if self.limited and event in ("PreToolUse", "PostToolUse", "Stop"):
+            self.limited = False
+            self.limited_until = None
 
         if self.awaiting_answer:
             # Hold entirely until real progress resumes, same as
@@ -320,6 +374,20 @@ class ClaudeCodeBackend(ChatBackend):
         return result
 
     # -- internal helpers ----------------------------------------------------
+
+    def _note_failure(self, status):
+        """A StopFailure: if its error means the usage limit is used up,
+        go LIMIT until the reset time in Claude Code's message (counted from
+        when the hook wrote it), or FALLBACK_HOLD if it doesn't say."""
+        message = " ".join(t for t in (status.get("last_assistant_message"), status.get("error_details")) if t)
+        if not is_limit_error(status.get("error"), message):
+            return
+        written = status.get("written_at")
+        when = datetime.datetime.fromtimestamp(written) if written else datetime.datetime.now()
+        until = parse_reset(message, now=when) or when + FALLBACK_HOLD
+        if until > datetime.datetime.now():
+            self.limited = True
+            self.limited_until = until
 
     def _read_status(self):
         try:

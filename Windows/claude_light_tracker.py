@@ -55,6 +55,7 @@ class State(Enum):
     QUESTION = "question"     # red
     DONE = "done"             # green
     IDLE = "idle"             # off / neutral
+    LIMIT = "limit"           # out of tokens: the app's usage limit is used up (see usage_limit.py)
 
 
 STATE_COLORS = {
@@ -63,6 +64,21 @@ STATE_COLORS = {
     State.QUESTION: "\033[41m\033[97m",   # white on red
     State.DONE: "\033[42m\033[30m",       # black on green
     State.IDLE: "\033[42m\033[30m",       # black on green -- idle == ready == green, not off
+    State.LIMIT: "\033[45m\033[97m",      # white on magenta
+}
+
+# The single-state commands every board understands: one ASCII byte each.
+# LIMIT is sent as "D" then "L": firmware that knows LIMIT ends up on it (it
+# acts on each byte, the last one wins), while older boards only act on the
+# bytes they know -- or, over BLE, only on a write's first byte -- and so fall
+# back to idle instead of staying stuck on whatever they showed before.
+STATE_COMMANDS = {
+    State.ANALYZING: b"A",
+    State.THINKING: b"T",
+    State.QUESTION: b"Q",
+    State.DONE: b"D",
+    State.IDLE: b"D",  # idle/ready reuses the green command -- no sketch changes needed
+    State.LIMIT: b"DL",
 }
 RESET = "\033[0m"
 
@@ -154,6 +170,7 @@ _FACE_LETTERS = {
     State.QUESTION: b"q",
     State.DONE: b"d",
     State.IDLE: b"d",
+    State.LIMIT: b"l",
 }
 
 
@@ -196,6 +213,7 @@ class GPIOLight(Light):
             State.QUESTION: red_pin,
             State.DONE: green_pin,
             State.IDLE: green_pin,
+            State.LIMIT: red_pin,  # out of tokens: no 4th LED, so it shares red
         }
 
         GPIO.setmode(GPIO.BCM)
@@ -216,18 +234,13 @@ class ArduinoLight(Light):
     """
     Drives LEDs on an Arduino running claude_light_tracker.ino over USB serial.
     Sends a single ASCII char per state change: 'A'=analyzing, 'T'=thinking,
-    'Q'=question, 'D'=done, 'I'=idle. Protocol must match the .ino sketch.
+    'Q'=question, 'D'=done/idle, and "DL" for out of tokens (see
+    STATE_COMMANDS). Protocol must match the .ino sketch.
 
     pip install pyserial
     """
 
-    _COMMANDS = {
-        State.ANALYZING: b"A",
-        State.THINKING: b"T",
-        State.QUESTION: b"Q",
-        State.DONE: b"D",
-        State.IDLE: b"D",  # idle/ready reuses the green command -- no sketch changes needed
-    }
+    _COMMANDS = STATE_COMMANDS
 
     def __init__(self, port: str, baud: int = 9600):
         import serial  # pyserial; imported here so this file still loads without it installed
@@ -325,13 +338,7 @@ class BLELight(Light):
     pip install bleak
     """
 
-    _COMMANDS = {
-        State.ANALYZING: b"A",
-        State.THINKING: b"T",
-        State.QUESTION: b"Q",
-        State.DONE: b"D",
-        State.IDLE: b"D",
-    }
+    _COMMANDS = STATE_COMMANDS
 
     # Nordic UART Service UUIDs -- must match the .ino sketch.
     RX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
@@ -457,6 +464,11 @@ class StateTracker:
     @property
     def current_state(self) -> State:
         return self._current
+
+    @property
+    def in_turn(self) -> bool:
+        """True between start_turn() and end_turn()."""
+        return self._armed
 
     def set_state(self, state: State) -> None:
         """Force the light to a specific state directly, bypassing text

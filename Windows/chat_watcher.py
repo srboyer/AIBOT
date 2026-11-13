@@ -18,6 +18,13 @@ So if Claude is waiting on you (red) while ChatGPT is still generating
 flash never hides another app that's still busy. Closing or crashing one
 app never interrupts tracking of the others.
 
+Out of tokens: while an app has used up its usage limit (see usage_limit.py)
+and isn't doing anything else, it shows LIMIT, which ranks just above IDLE
+-- so MAICA rests on its out-of-tokens face rather than its idle one, but any
+app working, asking or finishing still shows over it:
+
+    QUESTION > THINKING > ANALYZING > DONE > LIMIT > IDLE
+
 A split-face display (the MAICA screen) goes further: while two apps are
 busy at once its face splits in two, one per app, each showing its own
 state (see FaceSlots). The merged state is still sent as before, so
@@ -68,13 +75,15 @@ BACKENDS = {
 
 # When several apps are active at once, the light shows whichever state has
 # the highest priority. "Waiting on you" always wins (that's the one you
-# can act on), busy states beat the transient DONE flash, and IDLE only
-# shows when nothing anywhere is happening.
+# can act on), busy states beat the transient DONE flash, an app that's out
+# of tokens (LIMIT) shows when nothing is happening, and IDLE only shows when
+# nothing anywhere is happening or out of tokens.
 STATE_PRIORITY = {
-    State.QUESTION: 4,
-    State.THINKING: 3,
-    State.ANALYZING: 2,
-    State.DONE: 1,
+    State.QUESTION: 5,
+    State.THINKING: 4,
+    State.ANALYZING: 3,
+    State.DONE: 2,
+    State.LIMIT: 1,
     State.IDLE: 0,
 }
 
@@ -107,8 +116,19 @@ class BackendSlot:
         self.connected = False
         self.announced_waiting = False
         self.state = State.IDLE
+        self.limited = False   # out of tokens, per the backend's "limited" report
         self.done_until = 0.0  # when the transient DONE flash expires
         self.next_connect_attempt = 0.0
+
+    @property
+    def shown_state(self) -> State:
+        """What this app contributes to the light: its turn's state, or
+        LIMIT while it's out of tokens with nothing else going on. (LIMIT
+        lives outside the turn state machine: it's a standing condition,
+        not a step in a turn, and whatever turn is happening shows over it.)"""
+        if self.limited and self.state is State.IDLE:
+            return State.LIMIT
+        return self.state
 
     def tick(self, debug: bool = False):
         """One polling cycle for this app. Never raises -- all failure
@@ -170,11 +190,27 @@ class BackendSlot:
             # next tick returns this app to IDLE once it's had its moment,
             # at which point it stops having any say in the merged state.
 
+        # Optional keys (older backends don't report them):
+        #   failed  -- the turn ended on an error, with no reply: straight
+        #              back to idle, no green "done" flash.
+        #   limited -- True while the app is out of tokens, False once it
+        #              isn't; absent or None = no news, keep what we had.
+        if result.get("failed"):
+            print(f"[{self.name}] Turn ended on an error -> IDLE")
+            self.state = State.IDLE
+            self.done_until = 0.0
+
+        limited = result.get("limited")
+        if limited is not None and bool(limited) != self.limited:
+            self.limited = bool(limited)
+            print(f"[{self.name}] " + ("Out of tokens -> LIMIT" if self.limited else "Tokens available again"))
+
     def _drop(self):
         """Forget the stale connection and start over with a fresh backend
         instance, so no half-dead UI handles survive into the retry."""
         self.connected = False
         self.state = State.IDLE
+        self.limited = False
         self.next_connect_attempt = time.monotonic() + RECONNECT_INTERVAL
         try:
             self.backend = load_backend(self.name)
@@ -258,12 +294,12 @@ def run_multi(backend_names, make_light, debug: bool = False):
         for slot in slots:
             slot.tick(debug=debug)
 
-        merged = max((s.state for s in slots), key=lambda st: STATE_PRIORITY[st])
+        merged = max((s.shown_state for s in slots), key=lambda st: STATE_PRIORITY[st])
         faces = face_slots.update(slots)
 
         if debug:
             summary = ", ".join(
-                f"{s.name}={'?' if not s.connected else s.state.value}" for s in slots
+                f"{s.name}={'?' if not s.connected else s.shown_state.value}" for s in slots
             )
             light_desc = "light: reconnecting" if light is None else "light: ok"
             split = f", faces {' | '.join(f.value for f in faces)}" if faces else ""
@@ -317,11 +353,13 @@ def run(backend, light: Light, debug: bool = False):
     backend.connect()
     tracker = StateTracker(light)
     tracker.light.off()  # shows the idle/green resting state
+    limited = False      # out of tokens: LIMIT replaces the idle look between turns
 
     while True:
         backend.check_alive()
 
         result = backend.poll(debug=debug)
+        rest_changed = False
 
         if result["prompt_sent"]:
             print("[event] Prompt detected -> ANALYZING")
@@ -349,6 +387,20 @@ def run(backend, light: Light, debug: bool = False):
             tracker.set_state(State.DONE)
             time.sleep(DONE_FLASH_SECONDS)
             tracker.end_turn()
+            rest_changed = True
+
+        if result.get("failed"):  # ended on an error: no DONE flash
+            print("[event] Turn ended on an error -> IDLE")
+            tracker.end_turn()
+            rest_changed = True
+
+        if result.get("limited") is not None and bool(result["limited"]) != limited:
+            limited = bool(result["limited"])
+            print("[event] " + ("Out of tokens -> LIMIT" if limited else "Tokens available again"))
+            rest_changed = True
+
+        if rest_changed and not tracker.in_turn:
+            tracker.light.show(State.LIMIT if limited else State.IDLE)
 
         tracker.light.heartbeat()
         time.sleep(POLL_INTERVAL)

@@ -55,6 +55,13 @@ question if it was seen RUNNING while watched and then went to awaiting.
 Questions already pending when the watcher connected are ignored -- the
 same baseline-at-connect rule the other backends follow.
 
+OUT OF TOKENS (wording unverified): while the Chat tab shows and nothing is
+running, the window is searched every few seconds for a usage-limit banner
+("You've hit your limit...", "You're out of free messages until...") --
+see usage_limit.LimitBannerWatch, and its --debug "[limit]" lines if a real
+banner isn't recognised. From the Code tab the chat can't be seen, so the
+last answer stands (Claude Code reports its own limits through its hooks).
+
 THINKING (unverified): while a chat runs with the Chat tab showing, any
 element in the "Currently streaming message" group whose name starts with
 "Thinking" counts as extended thinking. The label hasn't been confirmed
@@ -70,6 +77,7 @@ import time
 from pywinauto import Desktop
 
 from chat_backend import ChatBackend
+from usage_limit import LimitBannerWatch
 
 WINDOW_TITLE = "Claude"
 # The mode switcher: a Code entry plus the Chat entry, which the app has
@@ -241,6 +249,7 @@ class ClaudeDesktopChatBackend(ChatBackend):
         self.win = None          # resolved wrapper -- calls on it fail fast once it's gone
         self.tracker = ChatSideTracker()
         self.failures = 0
+        self.limit_watch = LimitBannerWatch()
 
     # -- ChatBackend interface --------------------------------------------
 
@@ -271,6 +280,7 @@ class ClaudeDesktopChatBackend(ChatBackend):
         self.tracker = ChatSideTracker()
         self.tracker.baseline(obs)
         self.failures = 0
+        self.limit_watch = LimitBannerWatch()
         return True
 
     def check_alive(self):
@@ -292,6 +302,9 @@ class ClaudeDesktopChatBackend(ChatBackend):
 
         before = self.tracker.state
         result = self.tracker.feed(obs)
+        result["limited"] = self.limit_watch.check(
+            lambda: self.win if obs["chat_visible"] else None,
+            busy=self.tracker.state != "idle", debug=debug, label=self.name)
         if debug:
             busy = {t: s for t, s in obs["sessions"].items() if s != "idle"}
             print(f"[debug] claude_desktop: chat_visible={obs['chat_visible']} radio={obs['radio_raw']!r} "

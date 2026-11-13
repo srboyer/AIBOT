@@ -53,6 +53,7 @@ import time
 from pywinauto import Desktop
 
 from chatgpt_desktop_backend import ChatGPTDesktopBackend
+from usage_limit import LimitBannerWatch
 
 BROWSER_SUFFIX = r"(Google Chrome|Microsoft.{0,2}Edge|Mozilla Firefox|Brave|Opera|Vivaldi)$"
 
@@ -103,6 +104,7 @@ class ChatGPTWebBackend(ChatGPTDesktopBackend):
             self.win = spec
             self.armed = False
             self.awaiting_answer = False
+            self.limit_watch = LimitBannerWatch()
             return True
         return False
 
@@ -116,6 +118,16 @@ class ChatGPTWebBackend(ChatGPTDesktopBackend):
                       file=sys.stderr)
             time.sleep(5)
         print("Watching chatgpt.com in the browser. Type a prompt directly in the tab.")
+
+    def _page_visible(self) -> bool:
+        # Only the active tab is exposed: when chatgpt.com isn't it, finding
+        # no limit banner says nothing (see LimitBannerWatch.check).
+        try:
+            return self.win.child_window(
+                control_type="Edit", title_re=CHATGPT_URL_EDIT_RE
+            ).exists(timeout=0.1, retry_interval=0.1)
+        except Exception:
+            return False
 
     # -- browser-flexible button matching ----------------------------------
 

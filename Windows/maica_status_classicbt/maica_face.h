@@ -14,6 +14,9 @@
                        pulsing thought bubbles
     QUESTION  (red)    big round eyes, head tilted toward a bold exclamation
                        mark that gives an attention shake now and then
+    LIMIT     (violet) out of tokens: low, droopy eyes under an empty
+                       battery whose last bar blinks; every few seconds they
+                       glance up at it and sigh
 
   A status change is a choreographed transition. The new colour washes over
   the screen with a bright seam at its front -- a different wipe for each
@@ -26,7 +29,10 @@
                   and the eyes hop, land with a squash and pop wide
     -> IDLE       green floods out from the middle; the eyes puff up,
                   jelly-wobble and smile as happy arches
-    leaving QUESTION, the "!" flicks away.
+    -> LIMIT      the colour drains away from the top down to violet, the
+                  battery pops up empty, and the eyes deflate -- sinking,
+                  squashing flat and drooping
+    leaving QUESTION, the "!" flicks away; leaving LIMIT, the battery does.
   Shapes morph with spring easing and a little overshoot. Changes that
   overlap stack: a new wipe starts over whatever is on screen and the eyes
   start from exactly where they are, so nothing jumps.
@@ -119,6 +125,29 @@ const Shape SHAPE_QUESTION  = {1.0f, 64 / 255.0f, 56 / 255.0f, 29, 32, 29, -0.12
 #else
 const Shape SHAPE_QUESTION  = {1.0f, 64 / 255.0f, 56 / 255.0f, 33, 36, 33, -0.12f, 42, 118, 100, -0.12f};
 #endif
+// Out of tokens: wide, low, soft eyes on a drained violet.
+const Shape SHAPE_LIMIT     = {150 / 255.0f, 100 / 255.0f, 220 / 255.0f, 30, 23, 14, 0.0f, 46, 128, 120, 0.0f};
+
+// LIMIT: the top lids droop (down toward the outer corners, a sad slant --
+// the opposite of anger's) and the eyes look down. Every SIGH_MS they glance
+// up at the battery, then sigh: sink, squash and droop a little more.
+const float LIMIT_LID_DROP = 0.26f, LIMIT_SLANT = -0.24f, LIMIT_LOOK_DOWN_PX = 7.0f;
+const uint32_t SIGH_MS = 6500;
+
+// The empty battery (LIMIT), in its own units: a rounded outline BATT_W x
+// BATT_H (half-sizes) drawn BATT_STROKE thick, a nub on its right, and one
+// last bar inside its left end that blinks every BATT_BLINK_MS. On screen
+// it sits at BATT_X/Y, scaled by BATT_SCALE, above the eyes.
+#if FACE_ROUND
+const float BATT_X = 120.0f, BATT_Y = 62.0f, BATT_SCALE = 1.15f;
+#else
+const float BATT_X = 120.0f, BATT_Y = 52.0f, BATT_SCALE = 1.35f;
+#endif
+const float BATT_W = 24.0f, BATT_H = 12.0f, BATT_R = 4.5f, BATT_STROKE = 3.5f;
+const float BATT_NUB_X = 27.5f, BATT_NUB_W = 3.0f, BATT_NUB_H = 5.5f;
+const float BATT_BAR_X = -16.5f, BATT_BAR_W = 2.5f, BATT_BAR_H = 6.5f;
+const float BATT_EXTENT_X = 31.0f, BATT_EXTENT_Y = 14.0f;  // local half-size that holds it all
+const uint32_t BATT_BLINK_MS = 1400;
 
 // Thought bubbles (THINKING): three dots rising to the upper right, clear of
 // the right eye at the top of its gaze.
@@ -167,6 +196,7 @@ const float LINK_GREY = 170 / 255.0f;
 
 // Timing (ms).
 const uint32_t TO_ANALYZING_MS = 650, TO_THINKING_MS = 800, TO_QUESTION_MS = 900, TO_IDLE_MS = 950;
+const uint32_t TO_LIMIT_MS = 1300;  // a slow drain
 const uint32_t APPEAR_MS = 800;                        // first appearance, after the boot splash
 const uint32_t BLINK_CLOSE_MS = 70, BLINK_HOLD_MS = 40, BLINK_OPEN_MS = 90;
 const uint32_t BLINK_MIN_MS = 2500, BLINK_MAX_MS = 6000;
@@ -419,6 +449,19 @@ FACE_HOT float sdZ(float x, float y) {
   return SQ(bars < diag ? bars : diag) - Z_STROKE;
 }
 
+// The empty battery, in its own units (see BATT_*): the outline and its nub.
+// Its blinking last bar is separate (sdBattBar) since it fades on its own.
+template <float (*SQ)(float)>
+FACE_HOT float sdBattShell(float lx, float ly) {
+  float body = fabsf(sdRoundBox<SQ>(lx, ly, BATT_W, BATT_H, BATT_R)) - BATT_STROKE * 0.5f;
+  float nub = sdRoundBox<SQ>(lx - BATT_NUB_X, ly, BATT_NUB_W, BATT_NUB_H, 1.5f);
+  return body < nub ? body : nub;
+}
+template <float (*SQ)(float)>
+FACE_HOT float sdBattBar(float lx, float ly) {
+  return sdRoundBox<SQ>(lx - BATT_BAR_X, ly, BATT_BAR_W, BATT_BAR_H, 1.2f);
+}
+
 // ---- Pose: everything about the eyes that animates --------------------------
 
 struct Pose {
@@ -431,19 +474,23 @@ struct Pose {
   float dots;                 // thought bubbles, 0..1
   float mark, markPop;        // the "!": visibility 0..1, size multiplier
   float shake, beat;          // its attention shake: swing -1..1, and how far into a shake 0..1..0
-  float lidDrop, lidSlant;    // top lids: how far down (0..1), and slant down toward the nose (radians)
+  float lidDrop, lidSlant;    // top lids: how far down (0..1), and slant down toward the nose (radians;
+                              // negative slants them down toward the outer corners)
   float vein, zs;             // the anger mark and the sleeping Zs: visibility 0..1
+  float batt, battPop;        // the empty battery (LIMIT): visibility 0..1, size multiplier
 };
 
 // ---- Frame: what one frame draws, precomputed for rendering ----------------
 
 // A colour wipe as drawn this frame. Its field is negative where the new
 // colour has arrived; `seam` is distance from the moving front.
-enum : uint8_t { WIPE_RADIAL, WIPE_STRIP, WIPE_CLOCK };
+// WIPE_DROP: the new colour comes down from the top, the old one draining
+// away beneath it.
+enum : uint8_t { WIPE_RADIAL, WIPE_STRIP, WIPE_CLOCK, WIPE_DROP };
 struct WipeGeo {
   uint8_t kind;
   float ox, oy;      // origin (radial, clock)
-  float front;       // radius (radial), x (strip) or angle clockwise from 12 o'clock (clock)
+  float front;       // radius (radial), x (strip), y (drop) or angle clockwise from 12 o'clock (clock)
   float fc, fs;      // clock: cos and sin of the front angle
   float r, g, b;     // the colour it brings
   float hl;          // seam brightness
@@ -469,7 +516,7 @@ struct Region {
   bool ring;
   float ox, oy, r0, r1;
 };
-const int MAX_REGIONS = 6 + MAX_WIPES + MAX_RIPPLES + 1;
+const int MAX_REGIONS = 7 + MAX_WIPES + MAX_RIPPLES + 1;
 
 // A ripple as drawn this frame: centre, radius of its leading wave, the
 // squared radii between which its waves are, and its strength.
@@ -494,6 +541,8 @@ struct Frame {
   Rect veinBox;
   float zK, zX[3], zY[3], zInv[3], zS[3], zA[3];
   Rect zsBox;
+  float battK, battX, battY, battScale, battInv, battLow;  // battLow: the last bar's blink, 0..1
+  Rect battBox;
   int nRipples;
   RippleGeo ripples[MAX_RIPPLES];
   float rippleDisp[RIPPLE_LUT], rippleLight[RIPPLE_LUT];  // one wave packet, unit strength
@@ -615,6 +664,16 @@ inline void Frame::prepare(const Pose &p, float open, float breathe, float float
     zy0 = minf(zy0, zY[k] - h); zy1 = maxf(zy1, zY[k] + h);
   }
   zsBox = zK > 0.001f ? boxAround(zx0, zy0, zx1, zy1, 2) : Rect{0, 0, 0, 0};
+
+  // The empty battery bobs gently; its last bar blinks, soft-edged.
+  battK = clamp01(p.batt);
+  battScale = maxf(BATT_SCALE * p.battPop, 0.05f) * v.s;
+  battInv = 1.0f / battScale;
+  battX = v.X(BATT_X + p.ox * 0.4f);
+  battY = v.Y(BATT_Y + 1.5f * sinf(TAU * (now % 2900) / 2900.0f) + p.oy * 0.3f);
+  battLow = clamp01(0.5f + 3.0f * cosf(TAU * (now % BATT_BLINK_MS) / BATT_BLINK_MS));
+  float bxr = BATT_EXTENT_X * battScale, byr = BATT_EXTENT_Y * battScale;
+  battBox = battK > 0.001f ? boxAround(battX - bxr, battY - byr, battX + bxr, battY + byr, 2) : Rect{0, 0, 0, 0};
 }
 
 inline uint16_t rgb565(float r, float g, float b) {
@@ -636,6 +695,8 @@ FACE_HOT void background(const Frame &f, float x, float y, float *pr, float *pg,
     float d, seam;
     if (w.kind == WIPE_STRIP) {
       d = seam = x - w.front;
+    } else if (w.kind == WIPE_DROP) {
+      d = seam = y - w.front;
     } else if (w.kind == WIPE_RADIAL) {
       float dx = x - w.ox, dy = y - w.oy;
       d = seam = SQ(dx * dx + dy * dy) - w.front;
@@ -727,7 +788,7 @@ FACE_HOT bool inBox(const Rect &b, float x, float y) { return x >= b.x0 && x < b
 // found, the reference all.
 template <float (*SQ)(float)>
 FACE_HOT uint16_t shadePixel(const Frame &f, float x, float y, float sx, float sy, float light, int eyeMask,
-                             bool dotsOn, bool markOn, bool veinOn, bool zOn, bool linkOn) {
+                             bool dotsOn, bool markOn, bool veinOn, bool zOn, bool battOn, bool linkOn) {
   float r, g, b;
   background<SQ>(f, sx, sy, &r, &g, &b);
   float cr = r, cg = g, cb = b;
@@ -756,6 +817,11 @@ FACE_HOT uint16_t shadePixel(const Frame &f, float x, float y, float sx, float s
   if (veinOn) {
     float dv = sdVein<SQ>((sx - f.veinX) * f.veinInv, (sy - f.veinY) * f.veinInv) * f.veinScale;
     k = maxf(k, clamp01(0.5f - dv) * f.veinK);
+  }
+  if (battOn) {
+    float bx = (sx - f.battX) * f.battInv, by = (sy - f.battY) * f.battInv;
+    k = maxf(k, clamp01(0.5f - sdBattShell<SQ>(bx, by) * f.battScale) * f.battK);
+    if (f.battLow > 0) k = maxf(k, clamp01(0.5f - sdBattBar<SQ>(bx, by) * f.battScale) * f.battK * f.battLow);
   }
   if (k > 0) { cr += (kr - cr) * k; cg += (kg - cg) * k; cb += (kb - cb) * k; }
   if (zOn) {  // the Zs are light
@@ -791,7 +857,7 @@ inline uint16_t pixel(int ix, int iy, const Frame &f, bool linkDot) {
   float x = ix + 0.5f, y = iy + 0.5f, sx = x, sy = y, light = 0;
   if (f.nRipples) rippleAt<sqrtRef>(f, x, y, &sx, &sy, &light);
   return shadePixel<sqrtRef>(f, x, y, sx, sy, light, 3, f.dots > 0.001f, f.markK > 0.001f, f.veinK > 0.001f,
-                            f.zK > 0.001f, linkDot);
+                            f.zK > 0.001f, f.battK > 0.001f, linkDot);
 }
 
 // Fast path, what the sketch runs: pixels [x0, x1) of row iy into
@@ -808,7 +874,7 @@ inline void renderRow(uint16_t *out, int x0, int x1, int iy, const Frame &f, boo
     bool linkOn = linkRow && ix >= LINK_BOX.x0 && ix < LINK_BOX.x1;
     out[ix - x0] = shadePixel<fsqrt>(f, x, y, sx, sy, light, mask, inBox(f.dotsBox, sx, sy),
                                      inBox(f.markBox, sx, sy), inBox(f.veinBox, sx, sy),
-                                     inBox(f.zsBox, sx, sy), linkOn);
+                                     inBox(f.zsBox, sx, sy), inBox(f.battBox, sx, sy), linkOn);
   }
 }
 
@@ -857,6 +923,7 @@ inline const Shape &shapeOf(char st) {
     case 'A': return SHAPE_ANALYZING;
     case 'T': return SHAPE_THINKING;
     case 'Q': return SHAPE_QUESTION;
+    case 'L': return SHAPE_LIMIT;
   }
   return SHAPE_IDLE;
 }
@@ -866,6 +933,7 @@ inline uint32_t transitionMs(char st) {
     case 'A': return TO_ANALYZING_MS;
     case 'T': return TO_THINKING_MS;
     case 'Q': return TO_QUESTION_MS;
+    case 'L': return TO_LIMIT_MS;
   }
   return TO_IDLE_MS;
 }
@@ -896,7 +964,7 @@ class Engine {
       shown = rest(now);
       nWipes = 0;
       baseR = baseG = baseB = 0;
-      prevEye[0] = prevEye[1] = prevDots = prevMark = prevVein = prevZs = Rect{0, 0, 0, 0};
+      prevEye[0] = prevEye[1] = prevDots = prevMark = prevVein = prevZs = prevBatt = Rect{0, 0, 0, 0};
     }
     from = shown;
     t0 = now;
@@ -908,6 +976,7 @@ class Engine {
       case 'A': addWipe(WIPE_STRIP, 0, 0, SCAN_AT, SCAN_LEN, true, 0.6f); break;
       case 'T': addWipe(WIPE_CLOCK, 120, 120, 0.05f, 0.65f, true, 0.5f); break;
       case 'Q': addWipe(WIPE_RADIAL, BURST_X, BURST_Y, 0.12f, 0.58f, false, 0.55f); break;
+      case 'L': addWipe(WIPE_DROP, 0, 0, 0.04f, 0.80f, true, 0.30f); break;
       default:  addWipe(WIPE_RADIAL, 120, 120, 0.05f, 0.70f, false, 0.4f); break;
     }
   }
@@ -998,7 +1067,7 @@ class Engine {
     // full anger the eyes tremble.
     float a = smooth(angerShown);
     drawn.lidDrop = maxf(drawn.lidDrop, ANGER_LID_DROP * a);
-    drawn.lidSlant = ANGER_SLANT * a;
+    drawn.lidSlant = lerpf(drawn.lidSlant, ANGER_SLANT, a);  // anger wins over LIMIT's sad slant
     drawn.vein = smooth((angerShown - 0.45f) / 0.2f);
     float tremble = smooth((angerShown - 0.85f) / 0.15f);
     drawn.lx += 1.3f * tremble * sinf(now * 0.11f);
@@ -1024,6 +1093,8 @@ class Engine {
     prevVein = fr.veinBox;
     addRegion(unite(fr.zsBox, prevZs));
     prevZs = fr.zsBox;
+    addRegion(unite(fr.battBox, prevBatt));
+    prevBatt = fr.battBox;
 
     // ...and each wipe's band between its front last frame and now. A wipe
     // that has covered the screen becomes the base colour, and anything
@@ -1056,7 +1127,10 @@ class Engine {
       WipeGeo &g = fr.wipes[fr.nWipes++];
       g.kind = w.kind;
       g.ox = view.X(w.ox); g.oy = view.Y(w.oy);
-      g.front = w.kind == WIPE_STRIP ? view.X(w.front) : w.kind == WIPE_RADIAL ? w.front * view.s : w.front;
+      g.front = w.kind == WIPE_STRIP    ? view.X(w.front)
+                : w.kind == WIPE_DROP   ? view.Y(w.front)
+                : w.kind == WIPE_RADIAL ? w.front * view.s
+                                        : w.front;
       g.fc = cosf(w.front); g.fs = sinf(w.front);
       g.r = w.r; g.g = w.g; g.b = w.b;
       // The clock's seam fades as it closes, so its last sliver lands cleanly.
@@ -1100,7 +1174,7 @@ class Engine {
     uint8_t kind;
     bool inOut;            // eased in and out (else fast start, slow finish)
     float ox, oy, reach;   // origin; radial: radius that clears the panel's corners, seam included
-    float from, to;        // strip: where its front starts and ends (just off the panel)
+    float from, to;        // strip / drop: where its front starts and ends (just off the panel)
     uint32_t start, dur;
     float r, g, b, hl;
     float progress, front; // as of the last update
@@ -1114,7 +1188,7 @@ class Engine {
   Wipe wipes[MAX_WIPES] = {};
   int nWipes = 0;
   float baseR = 0, baseG = 0, baseB = 0;
-  Rect prevEye[2] = {}, prevDots = {}, prevMark = {}, prevVein = {}, prevZs = {};
+  Rect prevEye[2] = {}, prevDots = {}, prevMark = {}, prevVein = {}, prevZs = {}, prevBatt = {};
   Frame fr{};
   uint32_t rng = 0x9E3779B9u;
 
@@ -1233,8 +1307,8 @@ class Engine {
     w.ox = ox; w.oy = oy;
     float m = (SEAM_PX + 2) / view.s;  // the seam, in face units
     w.reach = cornerReach(ox, oy) + m;
-    w.from = view.vx0() - m;
-    w.to = view.vx1() + m;
+    w.from = (kind == WIPE_DROP ? view.vy0() : view.vx0()) - m;
+    w.to = (kind == WIPE_DROP ? view.vy1() : view.vx1()) + m;
     w.start = start;
     w.dur = ms ? ms : 1;
     w.r = r; w.g = g; w.b = b;
@@ -1249,7 +1323,7 @@ class Engine {
   }
 
   static float frontOf(const Wipe &w, float f) {
-    if (w.kind == WIPE_STRIP) return lerpf(w.from, w.to, f);
+    if (w.kind == WIPE_STRIP || w.kind == WIPE_DROP) return lerpf(w.from, w.to, f);
     if (w.kind == WIPE_CLOCK) return f * TAU;
     return f * w.reach;
   }
@@ -1269,6 +1343,7 @@ class Engine {
   bool covers(const Wipe &w) const {
     float m = (SEAM_PX + 2) / view.s;
     if (w.kind == WIPE_STRIP) return w.to >= view.vx1() + m * 0.5f;
+    if (w.kind == WIPE_DROP) return w.to >= view.vy1() + m * 0.5f;
     if (w.kind == WIPE_RADIAL) return w.reach >= cornerReach(w.ox, w.oy) + m * 0.5f;
     return true;  // a full turn covers everything
   }
@@ -1304,6 +1379,8 @@ class Engine {
     float ox = view.X(w.ox), oy = view.Y(w.oy);
     if (w.kind == WIPE_STRIP) {
       addRegion(boxAround(view.X(lo), 0, view.X(hi), 240, m));
+    } else if (w.kind == WIPE_DROP) {
+      addRegion(boxAround(0, view.Y(lo), 240, view.Y(hi), m));
     } else if (w.kind == WIPE_RADIAL) {
       addRing(ox, oy, lo * view.s - m, hi * view.s + m);
     } else {
@@ -1445,7 +1522,21 @@ class Engine {
     p.mark = 0; p.markPop = 1; p.shake = 0; p.beat = 0;
     p.lidDrop = p.lidSlant = 0;
     p.vein = p.zs = 0;
-    if (state == 'A') {
+    p.batt = 0; p.battPop = 1;
+    if (state == 'L') {
+      // Out of tokens: low, droopy eyes looking down. Now and then they
+      // glance up at the empty battery, then sigh -- sink, squash, droop.
+      p.batt = 1;
+      p.lidSlant = LIMIT_SLANT;
+      float u = (float)(now % SIGH_MS) / SIGH_MS;
+      float look = bump(u, 0.48f, 0.74f), sigh = bump(u, 0.72f, 1.0f);
+      p.lx = 3.0f * sinf(TAU * (now % 7300) / 7300.0f) * (1 - look);
+      p.ly = lerpf(LIMIT_LOOK_DOWN_PX, -9.0f, smooth(look * 1.6f));
+      p.lidDrop = LIMIT_LID_DROP * (1 - 0.6f * smooth(look * 1.6f)) + 0.08f * sigh;
+      p.oy = 4.0f * sigh;
+      p.sx = 1 + 0.05f * sigh;
+      p.sy = 1 - 0.06f * sigh;
+    } else if (state == 'A') {
       // Reading: the eyes sweep left to right, then flick back.
       const uint32_t P = 1900;
       float u = (float)(now % P) / P;
@@ -1491,13 +1582,15 @@ class Engine {
     p.lx = lerpf(a.lx, tgt.lx, su); p.ly = lerpf(a.ly, tgt.ly, su);
     p.shake = lerpf(a.shake, tgt.shake, su);
     p.beat = lerpf(a.beat, tgt.beat, su);
-    // Whatever an interrupted transition was still doing settles out.
+    // Whatever an interrupted transition was still doing settles out (into
+    // the new pose's own squash and offset -- only LIMIT's sigh has any).
     float settle = 1 - smooth(u / 0.35f);
-    p.sx = 1 + (a.sx - 1) * settle; p.sy = 1 + (a.sy - 1) * settle;
-    p.ox = a.ox * settle; p.oy = a.oy * settle;
+    p.sx = lerpf(tgt.sx, a.sx, settle); p.sy = lerpf(tgt.sy, a.sy, settle);
+    p.ox = lerpf(tgt.ox, a.ox, settle); p.oy = lerpf(tgt.oy, a.oy, settle);
     p.lid = 1 + (a.lid - 1) * settle;
     p.happy = a.happy * settle;
     p.lidDrop = lerpf(a.lidDrop, tgt.lidDrop, su);
+    p.lidSlant = lerpf(a.lidSlant, tgt.lidSlant, su);
     p.zs = lerpf(a.zs, tgt.zs, su);
     p.dots = state == 'T' ? lerpf(a.dots, 1, smooth((u - 0.55f) / 0.35f)) : a.dots * (1 - smooth(u / 0.3f));
 
@@ -1506,6 +1599,7 @@ class Engine {
       p.sx *= s; p.sy *= s;
       p.lid = smooth((u - 0.45f) / 0.25f);      // ...and open as they land
       p.mark = tgt.mark; p.markPop = s;
+      p.batt = tgt.batt; p.battPop = s;
       p.dots = tgt.dots * smooth((u - 0.5f) / 0.3f);
       return p;
     }
@@ -1513,6 +1607,11 @@ class Engine {
       float away = smooth(u / 0.45f);
       p.mark = a.mark * (1 - away);
       p.markPop = a.markPop + 0.4f * away;
+    }
+    if (state != 'L') {                         // ...and so does the battery
+      float away = smooth(u / 0.45f);
+      p.batt = a.batt * (1 - away);
+      p.battPop = a.battPop + 0.3f * away;
     }
     switch (state) {
       case 'A': {
@@ -1552,6 +1651,19 @@ class Engine {
         float mu = clamp01((u - 0.02f) / 0.45f);
         p.mark = lerpf(a.mark, 1, smooth(mu * 3));
         p.markPop = a.mark < 0.3f ? 0.2f + 0.8f * spring(mu) : lerpf(a.markPop, 1, smooth(mu));
+        break;
+      }
+      case 'L': {
+        // Deflate: the empty battery pops up, and as the colour drains past
+        // them the eyes sink, squash flat and droop, then settle low.
+        float bu = clamp01((u - 0.04f) / 0.45f);
+        p.batt = lerpf(a.batt, 1, smooth(bu * 3));
+        p.battPop = a.batt < 0.3f ? 0.2f + 0.8f * spring(bu) : lerpf(a.battPop, 1, smooth(bu));
+        float drain = bump(u, 0.18f, 0.82f);
+        p.oy += 12 * drain;
+        p.sx += 0.12f * drain;
+        p.sy -= 0.20f * drain;
+        p.lid = minf(p.lid, 1 - 0.45f * bump(u, 0.25f, 0.85f));
         break;
       }
       default: {
@@ -1601,7 +1713,7 @@ class Faces {
     if (mode == ONE) eng[main].setState(st, now, false);
   }
 
-  // Split into two faces showing st[0] (left) and st[1] (right) -- 'A',
+  // Split into two faces showing st[0] (left) and st[1] (right) -- 'A', 'L',
   // 'T', 'Q' or 'D' -- or, with n < 2, back to one face.
   void setSplit(int n, const char *st, uint32_t now) {
     if (n >= 2) {

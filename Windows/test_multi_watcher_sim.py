@@ -159,4 +159,59 @@ step(slots, "t13 gpt finishes during claude outage", State.DONE)
 step(slots, "t14 claude reconnects, flash over", State.IDLE)
 assert slots[0].connected, "claude slot should be reconnected"
 
+# --- Out of tokens: LIMIT rests over IDLE, everything else shows over it ------
+register_fake("fake_code", "FakeCode",
+              connect_script=[True],
+              poll_script=[
+                  empty_result(limited=False),
+                  empty_result(prompt_sent=True),
+                  empty_result(failed=True, limited=True),  # StopFailure: usage limit
+                  empty_result(),                           # no news: stays limited
+                  empty_result(),
+                  empty_result(),
+                  empty_result(),
+                  empty_result(limited=False),              # limit reset
+              ])
+register_fake("fake_gpt2", "FakeGPT2",
+              connect_script=[True],
+              poll_script=[
+                  empty_result(),
+                  empty_result(),
+                  empty_result(),
+                  empty_result(),
+                  empty_result(prompt_sent=True),           # the other app gets to work
+                  empty_result(finished=True),
+                  empty_result(),
+                  empty_result(),
+              ])
+chat_watcher.BACKENDS.update({"fake_code": "fake_code.FakeCode", "fake_gpt2": "fake_gpt2.FakeGPT2"})
+
+
+def merged_shown(slots):
+    return max((s.shown_state for s in slots), key=lambda st: STATE_PRIORITY[st])
+
+
+def step_shown(slots, label, expect):
+    for s in slots:
+        s.tick()
+    got = merged_shown(slots)
+    status = "PASS" if got is expect else "FAIL"
+    detail = ", ".join(f"{s.name}={s.shown_state.value}" for s in slots)
+    print(f"[{status}] {label}: merged={got.value}  ({detail})")
+    assert got is expect, f"{label}: expected {expect}, got {got}"
+
+
+slots = [BackendSlot("fake_code"), BackendSlot("fake_gpt2")]
+step_shown(slots, "L1  both connect", State.IDLE)
+step_shown(slots, "L2  both idle", State.IDLE)
+step_shown(slots, "L3  code prompt sent", State.ANALYZING)
+step_shown(slots, "L4  turn fails on the limit: LIMIT, no DONE flash", State.LIMIT)
+assert slots[0].state is State.IDLE and slots[0].limited
+step_shown(slots, "L5  no news keeps LIMIT", State.LIMIT)
+step_shown(slots, "L6  other app working shows over LIMIT", State.ANALYZING)
+step_shown(slots, "L7  its DONE flash shows over LIMIT", State.DONE)
+step_shown(slots, "L8  flash over: back to LIMIT", State.LIMIT)
+step_shown(slots, "L9  limit resets: IDLE", State.IDLE)
+assert STATE_PRIORITY[State.DONE] > STATE_PRIORITY[State.LIMIT] > STATE_PRIORITY[State.IDLE]
+
 print("\nAll simulation checks passed.")

@@ -1,5 +1,16 @@
 /*
-  maica_status_classicbt.ino  --  v11 (MAICA PCB, ESP32-WROVER-E)
+  maica_status_classicbt.ino  --  v12 (MAICA PCB, ESP32-WROVER-E)
+
+  v12: out of tokens. When an AI app has used up its usage limit (Claude's
+  5-hour or weekly limit, a ChatGPT plan limit, an API account out of
+  credit) and nothing else is going on, MAICA shows a new face: the colour
+  drains away from the top down to violet, an empty battery pops up above
+  the eyes with its last bar blinking, and the eyes deflate -- low and
+  droopy, glancing up at the battery now and then with a sigh. It lasts until
+  the limit resets; any app working, asking or finishing shows over it. The
+  PC watcher sends it as "D" then "L" (the last byte wins here, while older
+  firmware ignores the "L" and simply goes idle), and as 'l' inside a
+  split-face frame. Details in maica_face.h.
 
   v11: round screen. SCREEN_ROUND 1 drives Adafruit's 1.28" 240x240 round
   GC9A01A display (product 6178) instead of the 1.54" square ST7789 (3787).
@@ -264,6 +275,7 @@ const char *stateName(char s) {
     case 'T': return "THINKING";
     case 'Q': return "QUESTION";
     case 'D': return "IDLE";
+    case 'L': return "OUT OF TOKENS";
   }
   return "?";
 }
@@ -534,7 +546,7 @@ void drawSplash() {
   tft.print("MAICA");
   tft.setTextSize(2);
   tft.setCursor(48, 105);           // 12 chars x 12px = 144px, centred
-  tft.print("firmware v11");
+  tft.print("firmware v12");
   tft.setTextColor(BLACK);
   const char *names[3] = {"RED", "GRN", "BLU"};
   for (int i = 0; i < 3; i++) {     // 3 chars x 12px, centred in each bar
@@ -605,7 +617,7 @@ void btEventCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
 void setup() {
   Serial.begin(115200);  // USB, status/debug output only -- commands come over Bluetooth
   delay(500);
-  Serial.println("\n=== MAICA status firmware v11 (Classic Bluetooth) ===");
+  Serial.println("\n=== MAICA status firmware v12 (Classic Bluetooth) ===");
   Serial.printf("Chip: %s rev %d, %d cores @ %lu MHz\n",
                 ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores(), (unsigned long)ESP.getCpuFreqMHz());
 
@@ -638,15 +650,15 @@ void loop() {
         if (n != splitCount || n) splitChanged = true;
         splitCount = n;
         frameLen = -1;
-      } else if (frameLen < 4 && (cmd == 'a' || cmd == 't' || cmd == 'q' || cmd == 'd')) {
+      } else if (frameLen < 4 && (cmd == 'a' || cmd == 't' || cmd == 'q' || cmd == 'd' || cmd == 'l')) {
         frameBuf[frameLen++] = cmd;
       } else {
         frameLen = -1;  // not a frame after all
       }
       continue;
     }
-    if (cmd == 'A' || cmd == 'T' || cmd == 'Q' || cmd == 'D') {
-      currentState = cmd;
+    if (cmd == 'A' || cmd == 'T' || cmd == 'Q' || cmd == 'D' || cmd == 'L') {
+      currentState = cmd;  // out of tokens arrives as "DL": the last byte wins
     }
   }
 

@@ -25,6 +25,14 @@ finished) was indistinguishable from a real finish -- see poll()'s
 awaiting_answer hold, same "hold until it clears" shape as Claude
 Desktop's is_question_hint handling.
 
+Out of tokens (wording unverified): while nothing is generating, the window
+is searched every few seconds for a plan-limit banner ("You've hit the Free
+plan limit for...", "You've reached your limit...") -- see
+usage_limit.LimitBannerWatch, and its --debug "[limit]" lines if a real
+banner isn't recognised. A free-plan limit that falls back to a smaller
+model still counts: ChatGPT keeps answering, and while it does the working
+face shows over the out-of-tokens one anyway.
+
 See chat_backend.py for the interface this implements.
 """
 
@@ -34,6 +42,7 @@ import time
 from pywinauto import Desktop
 
 from chat_backend import ChatBackend
+from usage_limit import LimitBannerWatch
 
 # Matches "Custom answer for Where are you going?", "Custom answer for
 # What's your budget?", etc. -- see module docstring.
@@ -47,6 +56,7 @@ class ChatGPTDesktopBackend(ChatBackend):
         self.win = None
         self.armed = False  # True while a response is actively generating
         self.awaiting_answer = False  # True while an interactive question is up, unanswered
+        self.limit_watch = LimitBannerWatch()
 
     # -- ChatBackend interface --------------------------------------------
 
@@ -70,12 +80,25 @@ class ChatGPTDesktopBackend(ChatBackend):
         self.win = win
         self.armed = False
         self.awaiting_answer = False
+        self.limit_watch = LimitBannerWatch()
         return True
 
     def check_alive(self):
         self.win.window_text()  # raises if the window has gone stale
 
     def poll(self, debug: bool = False) -> dict:
+        result = self._poll_turn(debug=debug)
+        result["limited"] = self.limit_watch.check(
+            lambda: self.win if self._page_visible() else None,
+            busy=self.armed or self.awaiting_answer, debug=debug, label=self.name)
+        return result
+
+    def _page_visible(self) -> bool:
+        """Whether ChatGPT's page is what the window is showing (always, for
+        the desktop app; the browser backend checks the active tab)."""
+        return True
+
+    def _poll_turn(self, debug: bool = False) -> dict:
         result = {
             "prompt_sent": False,
             "question_started": False,

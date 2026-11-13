@@ -56,6 +56,16 @@ class ChatBackend:
         Apps that don't support a given concept (e.g. no extended-thinking
         indicator) should just always report False/"" for that key rather
         than raising.
+
+        Two optional keys (a backend that doesn't know them just leaves
+        them out):
+
+            "failed": bool,    # the turn just ended on an error, with no reply
+                               # (back to idle without the green DONE flash)
+            "limited": bool,   # True while the app is out of tokens -- its
+                               # usage limit is used up -- False once it isn't;
+                               # None = can't tell this tick (keep the last
+                               # answer). See usage_limit.py.
         """
         raise NotImplementedError
 

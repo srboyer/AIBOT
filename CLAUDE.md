@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A physical status light (ESP32-C3 + MAX7219 8x8 LED dot-matrix display over
 BLE) that shows whether an AI chat app (Claude Desktop/Web, ChatGPT
-Desktop/Web) is idle, analyzing, thinking, waiting on you, or done — driven
+Desktop/Web) is idle, analyzing, thinking, waiting on you, done, or out of tokens — driven
 by watching the app's UI directly via Windows UI Automation (pywinauto), no
 API key or app-side integration required.
 
@@ -39,11 +39,12 @@ py -3.11 chat_watcher.py --debug                    # verbose per-poll tracing
 list. Registered names: `claude_desktop`, `chatgpt_desktop`, `claude_web`,
 `chatgpt_web`.
 
-No test runner/lint config exists in this repo. The one test file runs
-directly and needs no dependencies or hardware:
+No test runner/lint config exists in this repo. The test files run
+directly and need no apps or hardware:
 
 ```
 python3 test_multi_watcher_sim.py
+py -3.11 test_usage_limit.py        # out-of-tokens detection + Claude Code StopFailure
 ```
 
 Diagnostics for reverse-engineering a UI when a backend needs updating:
@@ -72,7 +73,7 @@ chat_watcher.py               <- generic runner; owns the light lifecycle and me
 Every backend implements:
 - `connect()` — blocking, retries patiently until the app is found. Used in single-backend mode.
 - `try_connect() -> bool` — single non-blocking attempt; never raises just because the app isn't open. This is what multi-app mode polls for every registered backend, including apps that may never launch.
-- `poll(debug=False) -> dict` — called ~once/sec, returns one-tick event flags: `prompt_sent`, `question_started`, `answer_received`, `thinking_started`, `thinking_ended`, `finished`. A backend with no concept of a given flag (e.g. no extended-thinking mode) always reports `False` for it.
+- `poll(debug=False) -> dict` — called ~once/sec, returns one-tick event flags: `prompt_sent`, `question_started`, `answer_received`, `thinking_started`, `thinking_ended`, `finished`. A backend with no concept of a given flag (e.g. no extended-thinking mode) always reports `False` for it. Two optional keys: `failed` (the turn ended on an error — idle with no DONE flash) and `limited` (True while the app is out of tokens, False once it isn't, None = no news; see `usage_limit.py`).
 - `check_alive()` — raises if the connection has gone stale (app closed/reopened), telling the outer loop to reconnect from scratch.
 
 Adding a new chatbot = one new module implementing this interface + a
@@ -87,11 +88,16 @@ crashing/closing never disturbs the others) and shows the
 **highest-priority** state across all of them each tick:
 
 ```
-QUESTION > THINKING > ANALYZING > DONE > IDLE
+QUESTION > THINKING > ANALYZING > DONE > LIMIT > IDLE
 ```
 
 ("Needs you" always outranks "working"; a transient DONE flash never hides
-another app still busy.) The light's own lifecycle is owned by this loop
+another app still busy. LIMIT — out of tokens — is not part of a slot's turn
+state machine: `BackendSlot.shown_state` shows it in place of IDLE while the
+backend reports `limited`. Claude Code learns it from its StopFailure hook;
+the chat apps from a usage-limit banner, found by `usage_limit.LimitBannerWatch`
+with a one-call UIA substring search — its wording is unverified, and
+`--debug` prints what it saw as `[limit]` lines.) The light's own lifecycle is owned by this loop
 independently of backend tracking, so a BLE drop only costs the *light* a
 reconnect — armed turns / held questions in the backends survive the outage
 and the light repaints the current state the moment it reconnects.
@@ -149,8 +155,10 @@ multi-app mode's responsiveness, not incidental style:
 
 ### `claude_light_tracker.py`
 
-Defines `State` (ANALYZING/THINKING/QUESTION/DONE/IDLE), the `Light`
-interface, and its implementations:
+Defines `State` (ANALYZING/THINKING/QUESTION/DONE/IDLE/LIMIT), the `Light`
+interface, and its implementations. LIMIT (out of tokens) goes out as the two
+bytes `DL` (`STATE_COMMANDS`): firmware that knows `L` ends on it, older boards
+act on the `D` and go idle instead of staying stuck.
 - `ConsoleLight` — colored terminal block, zero setup.
 - `ArduinoLight` — USB serial, single ASCII byte per state (superseded hardware path).
 - `BLELight` — the active path; Nordic UART Service over BLE to the ESP32-C3. Runs bleak's async API on a background asyncio loop/thread since the rest of the file is sync. `heartbeat()` re-sends the current state every 15s (tuned value — see in-file history comment on why 3s and 45s both failed) so the firmware can detect a dead PC/killed process and so bleak itself notices a silently-dropped link.
@@ -169,3 +177,8 @@ of which chatbot sent the byte. Current version implements a heartbeat/ghost-
 timeout protocol matched to `BLELight`'s send interval — if you change one
 side's timing, update the other (see in-file version history for why: a 3s
 heartbeat flooded the BLE stack and caused real disconnects).
+
+The MAICA board's firmware (`maica_status_classicbt/`, Classic BT) also takes
+`L` (out of tokens: its own face in `maica_face.h`) and the split-face frames
+`<..>`. `maica_face.h` is plain C++: it compiles on a PC (g++) for previews and
+for checking the partial redraws against full renders.

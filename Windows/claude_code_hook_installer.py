@@ -29,9 +29,10 @@ matter what they look like.
 
 Registers against every event claude_code_status_hook.py's own docstring
 lists: SessionStart, SessionEnd, UserPromptSubmit, PreToolUse, PostToolUse,
-Notification, Stop. PreToolUse/PostToolUse require a "matcher" ("*" = every
-tool); the others don't take one at all -- confirmed against a real
-settings.json shape.
+Notification, Stop, StopFailure. PreToolUse/PostToolUse require a "matcher"
+("*" = every tool); the others don't take one at all -- confirmed against a
+real settings.json shape. Re-running it on an existing install adds any
+event that's new since (it only adds what's missing).
 
 Also doubles as the uninstaller (`--uninstall`): strips exactly the entries
 _is_ours() recognizes and nothing else, same non-destructive philosophy in
@@ -60,6 +61,10 @@ HOOK_EVENTS = [
     ("PostToolUse", "*"),
     ("Notification", None),
     ("Stop", None),
+    # Instead of Stop when an API error ended the turn -- e.g. the usage
+    # limit ran out (MAICA's out-of-tokens face). Takes an optional matcher
+    # on the error kind; none = every error.
+    ("StopFailure", None),
 ]
 
 

@@ -35,6 +35,11 @@ until a screen reader has been detected. Either use the Narrator trick
 (Win+Ctrl+Enter, reopen the browser, turn Narrator off), or launch Chrome
 with the --force-renderer-accessibility flag to make it unconditional.
 
+OUT OF TOKENS (wording unverified): while nothing is running and the tab is
+showing, it's searched every few seconds for a usage-limit banner -- see
+usage_limit.LimitBannerWatch, and its --debug "[limit]" lines if a real
+banner isn't recognised.
+
 UNVERIFIED LABELS -- the web placeholder text may differ from the desktop
 app's ("Write a message..."). PLACEHOLDER_HINTS below accepts several
 plausible variants; if connection fails with the tab open and accessible,
@@ -49,6 +54,7 @@ import time
 from pywinauto import Desktop
 
 from claude_desktop_backend import ClaudeDesktopBackend, QUESTION_PLACEHOLDER_HINT
+from usage_limit import LimitBannerWatch
 
 # Title must END with a recognized browser name -- this is what guarantees
 # we can never grab the desktop app (titled exactly "Claude") by mistake.
@@ -76,6 +82,10 @@ class ClaudeWebBackend(ClaudeDesktopBackend):
     # How many consecutive failed input reads before we try re-acquiring
     # the elements in place (tab likely switched away and back).
     REACQUIRE_AFTER_FAILURES = 3
+
+    def __init__(self):
+        super().__init__()
+        self.limit_watch = LimitBannerWatch()
 
     # -- window finding ----------------------------------------------------
 
@@ -118,6 +128,7 @@ class ClaudeWebBackend(ClaudeDesktopBackend):
             self.input_box = input_box
             self.chat_group = chat_group
             self._reset_poll_state()
+            self.limit_watch = LimitBannerWatch()
             return True
         return False
 
@@ -171,7 +182,14 @@ class ClaudeWebBackend(ClaudeDesktopBackend):
                     print("[debug] re-acquired claude.ai elements (tab returned)")
 
         try:
-            return super().poll(debug=debug)
+            result = super().poll(debug=debug)
+            # Out of tokens: see usage_limit.LimitBannerWatch. Only searched
+            # while the tab's own elements answer -- a backgrounded tab shows
+            # nothing, which says nothing about a banner.
+            result["limited"] = self.limit_watch.check(
+                lambda: self.win if self.consecutive_input_failures == 0 else None,
+                busy=self.armed or self.awaiting_answer, debug=debug, label=self.name)
+            return result
         except RuntimeError:
             # ...and if the parent's liveness limit still trips, only
             # treat it as fatal when the WINDOW itself is gone (raise ->

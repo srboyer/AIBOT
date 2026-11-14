@@ -29,15 +29,21 @@ What the log says (observed in real logs on this machine):
                                        resets_at for the 5-hour ("primary")
                                        and weekly ("secondary") windows, and
                                        rate_limit_reached_type once one runs
-                                       out -> OUT OF TOKENS until resets_at.
+                                       out -> out of usage until resets_at.
                                        One record per limit ("limit_id": "codex",
                                        "premium", ...); each is kept separately.
     event_msg task_complete with       how running out actually shows (seen
       error.codex_error_info           2026-11-13: the last token_count said
       "usage_limit_exceeded"           97%): "You've hit your usage limit ...
-                                       try again at 11:20 PM." -> OUT OF TOKENS
+                                       try again at 11:20 PM." -> out of usage
                                        until then (no DONE flash), or until a
                                        later turn completes without an error.
+
+Usage, for MAICA's low battery: any 5-hour or weekly window LOW_AT% used
+or more (and not yet reset), or a turn that ended on the limit -> "low", a
+small battery over whatever face Codex has. At start the ends of the last
+week's logs are read too, so usage from hours or days ago (or from before
+MAICA restarted) is known straight away.
 
 Several sessions at once count together (most active wins). Only message
 TYPES are read -- never your prompts or Codex's replies; the one exception
@@ -61,6 +67,10 @@ from usage_limit import FALLBACK_HOLD, looks_like_limit_banner, parse_reset
 
 ACTIVE_WITHIN = 3 * 3600      # follow sessions whose log changed this recently (seconds)
 RESCAN_EVERY = 3.0            # look for new session logs this often (seconds)
+HISTORY_DAYS = 8              # at start, look this far back for the limits (the weekly window and a day)
+HISTORY_FILES = 12            # ...in at most this many of the newest logs
+HISTORY_TAIL = 1 << 20        # ...reading this much of the end of each (bytes)
+LOW_AT = 90.0                 # a usage window this full (percent) is running low
 STALE_BUSY = 30 * 60          # a session busy this long with no new lines is assumed dead
 QUESTION_EVENTS = ("exec_approval_request", "apply_patch_approval_request", "request_user_input",
                    "elicitation_request")
@@ -202,8 +212,13 @@ def _note_limit_error(limits, err, when, completed, started_at=None):
     """Record (or clear) the limit a turn ended on. A turn that STARTED
     after it and completes without an error means there's usage again --
     not one that was already under way, like a helper agent finishing the
-    task it had when the limit hit (seen 7 s after the error, 2026-11-13)."""
+    task it had when the limit hit (seen 7 s after the error, 2026-11-13).
+    Logs may be read in any order (the history at start), so it goes by
+    the times in them: an error older than a turn that went through, or
+    than the error already known, changes nothing."""
     if is_limit_error(err):
+        if when < limits.get("clean_from", 0) or (limits.get("error") and limits["error"][0] >= when):
+            return
         start = _dt.datetime.fromtimestamp(when)
         until = parse_reset(err.get("message") or "", now=start)
         if until is None:  # no time given: the 5-hour window's reset, else a fixed hold
@@ -214,8 +229,10 @@ def _note_limit_error(limits, err, when, completed, started_at=None):
         else:
             until_ts = until.timestamp()
         limits["error"] = (when, until_ts)
-    elif completed and not err and limits.get("error") and isinstance(started_at, (int, float))             and started_at > limits["error"][0]:
-        limits["error"] = None
+    elif completed and not err and isinstance(started_at, (int, float)):
+        limits["clean_from"] = max(limits.get("clean_from", 0), started_at)
+        if limits.get("error") and started_at > limits["error"][0]:
+            limits["error"] = None
 
 
 def codex_limited(limits, now=None):
@@ -230,6 +247,39 @@ def codex_limited(limits, now=None):
     if hits:
         return True, max((r for r in hits if r), default=None)
     return False, None
+
+
+def codex_low(limits, now=None) -> bool:
+    """Whether any usage window is LOW_AT% used or more and hasn't reset."""
+    now = now or time.time()
+    for _stamp, rl in limits.get("by_id", {}).values():
+        for w in (rl.get("primary"), rl.get("secondary")) if isinstance(rl, dict) else ():
+            if isinstance(w, dict) and (w.get("used_percent") or 0) >= LOW_AT and (w.get("resets_at") or 0) > now:
+                return True
+    return False
+
+
+_HISTORY_EVENTS = (b'"token_count"', b'"task_complete"', b'"turn_aborted"')
+
+
+def read_limits(path, limits, tail=HISTORY_TAIL):
+    """Fold the limit news at the end of one log into `limits`: its
+    rate_limits readings and the turns that ended on (or went past) the
+    limit. Nothing else is taken from it."""
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            f.seek(max(0, size - tail))
+            data = f.read()
+    except OSError:
+        return
+    lines = data.split(b"\n")
+    if size > tail:
+        lines = lines[1:]  # it started mid-line
+    reader = _Session(path)  # its own throwaway level and questions
+    for raw in lines:
+        if any(k in raw for k in _HISTORY_EVENTS):
+            reader._line(raw, limits)
 
 
 def limit_state(rate_limits, now=None):
@@ -262,6 +312,26 @@ class CodexBackend(ChatBackend):
         self.limits = {}
         self.questions = _Questions()
         self.next_scan = 0.0
+        self.low = False
+
+    def _read_history(self):
+        """The limits in the newest logs that aren't followed (older than
+        ACTIVE_WITHIN): a limit hit yesterday, or this week's usage."""
+        root = os.path.join(codex_home(), "sessions")
+        cutoff = time.time() - HISTORY_DAYS * 86400
+        found = []
+        for dirpath, _dirs, files in os.walk(root):
+            for f in files:
+                p = os.path.join(dirpath, f)
+                if f.endswith(".jsonl") and p not in self.sessions:
+                    try:
+                        m = os.path.getmtime(p)
+                    except OSError:
+                        continue
+                    if m >= cutoff:
+                        found.append((m, p))
+        for _m, p in sorted(found, reverse=True)[:HISTORY_FILES]:
+            read_limits(p, self.limits)
 
     def _scan(self):
         root = os.path.join(codex_home(), "sessions")
@@ -286,6 +356,7 @@ class CodexBackend(ChatBackend):
         self.questions = _Questions()
         self.limits = {}
         self._scan()
+        self._read_history()
         for s in self.sessions.values():
             s.read_new(self.limits, self.questions)
             s.ended = None
@@ -328,8 +399,14 @@ class CodexBackend(ChatBackend):
                 del self.sessions[path]
         level = self._level()
         result = self.tracker.feed(level, failed=failed and not finished)
-        limited, resets = codex_limited(self.limits)
+        limited, _resets = codex_limited(self.limits)
         result["limited"] = limited
+        low = limited or codex_low(self.limits)
+        if low != self.low:
+            self.low = low
+            print("[codex] " + ("out of usage" if limited else f"running low on usage ({LOW_AT:.0f}%+ used)")
+                  + " -> low battery" if low else "[codex] usage no longer low")
+        result["low"] = low
         if debug:
-            print(f"[debug] codex: sessions={len(self.sessions)} level={level} limited={limited}")
+            print(f"[debug] codex: sessions={len(self.sessions)} level={level} limited={limited} low={low}")
         return result

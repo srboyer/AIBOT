@@ -95,8 +95,7 @@ def run_settings():
 
     section("Colours", r); r += 1
     colors = dict(face.get("colors", {}))
-    names = [("idle", "Idle"), ("analyzing", "Working"), ("thinking", "Thinking"), ("question", "Asking you"),
-             ("limit", "Out of tokens")]
+    names = [("idle", "Idle"), ("analyzing", "Working"), ("thinking", "Thinking"), ("question", "Asking you")]
     swatches = ttk.Frame(root)
     swatches.grid(row=r, column=0, columnspan=3, sticky="w", padx=10); r += 1
     buttons = {}
@@ -200,7 +199,7 @@ def run_setup():
     def welcome(f):
         text(f, f"Welcome to MAICA {VERSION}", bold=True)
         text(f, "MAICA shows what your AI apps are doing -- working, thinking, asking you something, done, or "
-                "out of tokens. This takes about two minutes: connect MAICA, then tell it which AI apps you use.")
+                "running low on usage. This takes about two minutes: connect MAICA, then tell it which AI apps you use.")
 
     @step
     def connect(f):

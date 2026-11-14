@@ -33,6 +33,9 @@
                   battery pops up empty, and the eyes deflate -- sinking,
                   squashing flat and drooping
     leaving QUESTION, the "!" flicks away; leaving LIMIT, the battery does.
+  While the app a face shows is running low on usage (setLowCredit()), a
+  smaller battery with one bar left sits above its eyes, whatever its status
+  -- high enough to clear them all.
   Shapes morph with spring easing and a little overshoot. Changes that
   overlap stack: a new wipe starts over whatever is on screen and the eyes
   start from exactly where they are, so nothing jumps.
@@ -148,6 +151,14 @@ const float BATT_NUB_X = 27.5f, BATT_NUB_W = 3.0f, BATT_NUB_H = 5.5f;
 const float BATT_BAR_X = -16.5f, BATT_BAR_W = 2.5f, BATT_BAR_H = 6.5f;
 const float BATT_EXTENT_X = 31.0f, BATT_EXTENT_Y = 14.0f;  // local half-size that holds it all
 const uint32_t BATT_BLINK_MS = 1400;
+
+// Running low on usage (Engine::setLowCredit): the same battery at
+// LOW_BATT_POP of the size, LOW_BATT_LIFT px higher -- above the eyes of
+// every status, clear of the bubbles, the "!", the sparkle and the anger
+// mark -- with its last bar lit steady. Over any status but LIMIT (which has
+// its own); it fades in and out over LOW_FADE_MS.
+const float LOW_BATT_POP = 0.70f, LOW_BATT_LIFT = 20.0f;
+const uint32_t LOW_FADE_MS = 350;
 
 // Thought bubbles (THINKING): three dots rising to the upper right, clear of
 // the right eye at the top of its gaze.
@@ -586,6 +597,7 @@ struct Pose {
                               // negative slants them down toward the outer corners)
   float vein, zs;             // the anger mark and the sleeping Zs: visibility 0..1
   float batt, battPop;        // the empty battery (LIMIT): visibility 0..1, size multiplier
+  float battLift, battFull;   // ...raised (px) and its last bar lit steady (0..1): the low-usage look
   float spark;                // the "unread" sparkle: visibility 0..1
 };
 
@@ -790,13 +802,15 @@ inline void Frame::prepare(const Pose &p, float open, float breathe, float float
   }
   zsBox = zK > 0.001f ? boxAround(zx0, zy0, zx1, zy1, 2) : Rect{0, 0, 0, 0};
 
-  // The empty battery bobs gently; its last bar blinks, soft-edged.
+  // The empty battery bobs gently; its last bar blinks, soft-edged (or,
+  // running low, stays lit).
   battK = clamp01(p.batt);
   battScale = maxf(BATT_SCALE * p.battPop, 0.05f) * v.s;
   battInv = 1.0f / battScale;
   battX = v.X(BATT_X + p.ox * 0.4f);
-  battY = v.Y(BATT_Y + 1.5f * sinf(TAU * (now % 2900) / 2900.0f) + p.oy * 0.3f);
-  battLow = clamp01(0.5f + 3.0f * cosf(TAU * (now % BATT_BLINK_MS) / BATT_BLINK_MS));
+  battY = v.Y(BATT_Y - p.battLift + 1.5f * sinf(TAU * (now % 2900) / 2900.0f) + p.oy * 0.3f);
+  battLow = lerpf(clamp01(0.5f + 3.0f * cosf(TAU * (now % BATT_BLINK_MS) / BATT_BLINK_MS)), 1.0f,
+                  clamp01(p.battFull));
   float bxr = BATT_EXTENT_X * battScale, byr = BATT_EXTENT_Y * battScale;
   battBox = battK > 0.001f ? boxAround(battX - bxr, battY - byr, battX + bxr, battY + byr, 2) : Rect{0, 0, 0, 0};
 
@@ -1223,6 +1237,10 @@ class Engine {
     accOn = on;
   }
 
+  // The app this face shows is running low on usage: a small battery with
+  // one bar left over the eyes (not while out of tokens -- LIMIT has its own).
+  void setLowCredit(bool on) { lowOn = on; }
+
   // A long task finished: confetti and a joyful hop. level 1 or 2 (bigger).
   void cheer(int level, uint32_t now) {
     level = level < 1 ? 1 : level > 2 ? 2 : level;
@@ -1265,6 +1283,7 @@ class Engine {
     for (int i = 0; i < MAX_RIPPLES; i++)
       if (ripples[i].active) return true;
     if (fabsf(accK - (accOn ? 1.0f : 0.0f)) > 0.001f) return true;
+    if (fabsf(lowK - lowTarget()) > 0.001f) return true;
     return fabsf(fallVX) + fabsf(fallVY) > 8;  // eyes still swinging after a tilt
   }
 
@@ -1363,6 +1382,18 @@ class Engine {
     drawn.ly -= 6 * smooth(listenK);
     drawn.sy *= 1 + 0.08f * smooth(listenK);
     approach(&accK, accOn ? 1.0f : 0.0f, ACC_FADE_MS / 1000.0f, dt);
+
+    // Running low: the battery, smaller, higher and with its bar lit. Moving
+    // between LIMIT and another status it morphs between the two looks.
+    approach(&lowK, lowTarget(), LOW_FADE_MS / 1000.0f, dt);
+    float lk = smooth(lowK);
+    if (lk > 0.001f) {
+      float w = lk / (lk + drawn.batt);  // how much of the battery is the low-usage one
+      drawn.battPop = lerpf(drawn.battPop, LOW_BATT_POP * (0.6f + 0.4f * lk), w);
+      drawn.battLift = LOW_BATT_LIFT * w;
+      drawn.battFull = w;
+      drawn.batt = maxf(drawn.batt, lk);
+    }
 
     float open = minf(minf(minf(blinkOpenness(now), p.lid), 1 - (1 - FLINCH_LID) * wince), lidCap);
 
@@ -1537,6 +1568,12 @@ class Engine {
         confW[MAX_CONFETTI] = {};
   uint8_t confCol[MAX_CONFETTI] = {};
   Rect prevSpark = {}, prevAcc = {}, prevEar[2] = {}, prevConf[MAX_CONFETTI] = {};
+
+  // running low
+  bool lowOn = false;
+  float lowK = 0;
+
+  float lowTarget() const { return lowOn && state != 'L' ? 1.0f : 0.0f; }
 
   // The engine-driven parts of the frame: rim, listening arcs, confetti.
   void prepareExtras(uint32_t now) {
@@ -1902,7 +1939,7 @@ class Engine {
     p.mark = 0; p.markPop = 1; p.shake = 0; p.beat = 0;
     p.lidDrop = p.lidSlant = 0;
     p.vein = p.zs = 0;
-    p.batt = 0; p.battPop = 1;
+    p.batt = 0; p.battPop = 1; p.battLift = p.battFull = 0;
     p.spark = 0;
     if (state == 'U') {
       // Done, unread: smiling eyes that keep glancing up at a twinkling star
@@ -2122,7 +2159,8 @@ class Faces {
         new (&eng[other]) Engine();
         eng[other].seed(seedBase ^ (now * 2654435761u));
         eng[other].setView(rightView(240));
-        applyAccent(other, 1);  // a fresh engine: give it the right face's rim colour
+        applyAccent(other, 1);  // a fresh engine: give it the right face's rim colour...
+        applyExtras(other, 1);  // ...and low battery
         eng[other].setState(st[1], now, true);
         eng[main].setState(st[0], now, false);
         animate(SPLITTING, SPLIT_SEAM, SPLIT_MS, now);
@@ -2159,6 +2197,12 @@ class Faces {
     for (int i = 0; i < accN; i++) memcpy(accRGB[i], rgb[i], 3);
     applyAccent(main, 0);
     applyAccent(1 - main, 1);
+  }
+  // Which faces' apps are running low on usage, in the same order.
+  void setLows(int n, const bool *on) {
+    for (int i = 0; i < 2; i++) lows[i] = i < n && on[i];
+    applyExtras(main, 0);
+    applyExtras(1 - main, 1);
   }
   void cheer(int level, uint32_t now) {
     eng[main].cheer(level, now);
@@ -2237,10 +2281,12 @@ class Faces {
 
   int accN = 0;
   uint8_t accRGB[2][3] = {};
+  bool lows[2] = {};
   void applyAccent(int engine, int face) {
     bool on = accN > face;
     eng[engine].setAccent(on, accRGB[face][0], accRGB[face][1], accRGB[face][2]);
   }
+  void applyExtras(int engine, int face) { eng[engine].setLowCredit(lows[face]); }
 
   void animate(Mode m, int to, uint32_t ms, uint32_t now) {
     mode = m;

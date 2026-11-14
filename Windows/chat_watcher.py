@@ -12,7 +12,7 @@ gets its own little state machine, apps that aren't open are quietly
 retried in the background, and the light shows the merged highest-priority
 state across every app:
 
-    QUESTION > THINKING > ANALYZING > DONE > UNREAD > LIMIT > IDLE
+    QUESTION > THINKING > ANALYZING > DONE > UNREAD > IDLE
 
 So if Claude is waiting on you (red) while ChatGPT is still generating
 (blue), you see red -- "needs me" always outranks "working", and a DONE
@@ -24,10 +24,11 @@ one in front stays as a gentle done look until you switch to that app (or
 for settings "unread_minutes"), instead of a 1.5 s flash you'd miss. Apps
 whose focus can't be told just flash.
 
-LIMIT -- out of tokens: while an app has used up its usage limit (see
-usage_limit.py) and isn't doing anything else, it shows LIMIT, so MAICA
-rests on its out-of-tokens face rather than its idle one; anything else
-going on still shows over it.
+Running low: while an app is 90%+ through its usage, or has used it up
+(see usage_limit.py), a small battery sits over its face on MAICA. Running
+out doesn't take MAICA over: an app that's out simply rests idle. (MAICA's
+purple out-of-tokens face, State.LIMIT, is no longer shown -- it stayed up
+for the hours a limit lasts.)
 
 A split-face display (the MAICA screen) goes further: while two apps are
 busy at once its face splits in two, one per app, each showing its own
@@ -126,7 +127,7 @@ FOCUS_TARGETS = {
 # When several apps are active at once, the light shows whichever state has
 # the highest priority. "Waiting on you" always wins (that's the one you
 # can act on), busy states beat the transient DONE flash, a reply you
-# haven't read beats out of tokens, and IDLE only shows when nothing
+# haven't read beats the rest, and IDLE only shows when nothing
 # anywhere is happening.
 STATE_PRIORITY = {
     State.QUESTION: 6,
@@ -134,7 +135,7 @@ STATE_PRIORITY = {
     State.ANALYZING: 4,
     State.DONE: 3,
     State.UNREAD: 2,
-    State.LIMIT: 1,
+    State.LIMIT: 1,   # not shown any more (see the module docstring); kept for older callers
     State.IDLE: 0,
 }
 
@@ -213,6 +214,7 @@ class BackendSlot:
         self.announced_waiting = False
         self.state = State.IDLE
         self.limited = False   # out of tokens, per the backend's "limited" report
+        self.low = False       # running low on usage, per its "low" report
         self.done_until = 0.0  # when the transient DONE flash expires
         self.next_connect_attempt = 0.0
         self.turn_started = None   # when the current turn began (for celebrations)
@@ -227,12 +229,9 @@ class BackendSlot:
 
     @property
     def shown_state(self) -> State:
-        """What this app contributes to the light: its turn's state, or
-        LIMIT while it's out of tokens with nothing else going on. (LIMIT
-        lives outside the turn state machine: it's a standing condition,
-        not a step in a turn, and whatever turn is happening shows over it.)"""
-        if self.limited and self.state is State.IDLE:
-            return State.LIMIT
+        """What this app contributes to the light: its turn's state. Out of
+        tokens it just rests idle -- the low battery over its face says so
+        when it works (see face_low)."""
         return self.state
 
     def focus_target(self):
@@ -366,7 +365,10 @@ class BackendSlot:
         limited = result.get("limited")
         if limited is not None and bool(limited) != self.limited:
             self.limited = bool(limited)
-            print(f"[{self.name}] " + ("Out of tokens -> LIMIT" if self.limited else "Tokens available again"))
+            print(f"[{self.name}] " + ("Out of tokens" if self.limited else "Tokens available again"))
+        #   low -- running low on usage: a small battery over its face.
+        if result.get("low") is not None:
+            self.low = bool(result["low"])
 
     def _drop(self):
         """Forget the stale connection and start over with a fresh backend
@@ -374,6 +376,7 @@ class BackendSlot:
         self.connected = False
         self.state = State.IDLE
         self.limited = False
+        self.low = False
         self.turn_started = None
         self.unread_pending = False
         self.next_connect_attempt = time.monotonic() + RECONNECT_INTERVAL
@@ -450,8 +453,8 @@ def apply_settings(cfg: dict):
 def jump_target(slots):
     """The app a double-tap should bring forward: one asking you something,
     else a reply you haven't read, else one that just finished, else one
-    that's working, else one out of tokens."""
-    order = (State.QUESTION, State.UNREAD, State.DONE, State.THINKING, State.ANALYZING, State.LIMIT)
+    that's working."""
+    order = (State.QUESTION, State.UNREAD, State.DONE, State.THINKING, State.ANALYZING)
     for st in order:
         for s in slots:
             if s.connected and s.shown_state is st:
@@ -459,16 +462,27 @@ def jump_target(slots):
     return None
 
 
-def accent_colors(slots, face_slots, faces, merged):
-    """The rim colour(s) for what MAICA is showing: one per face while split,
-    else the app behind the merged state; none when it's just idle."""
+def face_owners(slots, face_slots, faces, merged):
+    """The app behind each face MAICA shows: one per face while split, else
+    the app behind the merged state; none when it's just idle."""
     by_name = {s.name: s for s in slots}
     if faces:
-        return [_app_color(by_name[n].app_id) for n in face_slots.positions]
+        return [by_name[n] for n in face_slots.positions]
     if merged is State.IDLE:
         return []
     owner = next((s for s in slots if s.connected and s.shown_state is merged), None)
-    return [_app_color(owner.app_id)] if owner else []
+    return [owner] if owner else []
+
+
+def accent_colors(slots, face_slots, faces, merged):
+    """The rim colour(s) for what MAICA is showing (see face_owners)."""
+    return [_app_color(s.app_id) for s in face_owners(slots, face_slots, faces, merged)]
+
+
+def face_low(owners):
+    """Which faces get the low battery: their app is running low on usage,
+    or has used it up."""
+    return [bool(s.low or s.limited) for s in owners]
 
 
 def run_multi(backend_names, make_light, debug: bool = False, stop_event=None, status_cb=None):
@@ -490,6 +504,7 @@ def run_multi(backend_names, make_light, debug: bool = False, stop_event=None, s
     shown = None            # None forces a (re)send once a light exists
     shown_faces = None      # likewise for the split-face frame
     shown_apps = None       # ...and the rim colours
+    shown_low = None        # ...and the low-usage batteries
     next_light_attempt = 0.0
     light_connected_at = None  # for the link-duration autopsy on each drop
     voice = None
@@ -506,6 +521,7 @@ def run_multi(backend_names, make_light, debug: bool = False, stop_event=None, s
                 shown = None  # repaint whatever state we're in
                 shown_faces = None
                 shown_apps = None
+                shown_low = None
                 light_connected_at = time.monotonic()
                 print(f"[light] {time.strftime('%H:%M:%S')} link up.")
                 try:
@@ -561,10 +577,18 @@ def run_multi(backend_names, make_light, debug: bool = False, stop_event=None, s
                 light.show_faces(faces)
                 shown_faces = faces
 
-            apps = accent_colors(slots, face_slots, faces, merged) if ACCENT_ENABLED else []
+            owners = face_owners(slots, face_slots, faces, merged)
+            apps = [_app_color(s.app_id) for s in owners] if ACCENT_ENABLED else []
             if light is not None and apps != shown_apps:
                 light.set_apps(apps)
                 shown_apps = apps
+            low = face_low(owners)
+            if not any(low):
+                low = []
+            if light is not None and low != shown_low:
+                print("[light] low battery " + ("on: " + " | ".join("yes" if f else "no" for f in low) if low else "off"))
+                light.set_low(low)
+                shown_low = low
 
             if light is not None and merged is not shown:
                 light.show(merged)
@@ -662,13 +686,11 @@ def run(backend, light: Light, debug: bool = False):
     backend.connect()
     tracker = StateTracker(light)
     tracker.light.off()  # shows the idle/green resting state
-    limited = False      # out of tokens: LIMIT replaces the idle look between turns
 
     while True:
         backend.check_alive()
 
         result = backend.poll(debug=debug)
-        rest_changed = False
 
         if result["prompt_sent"]:
             print("[event] Prompt detected -> ANALYZING")
@@ -696,20 +718,10 @@ def run(backend, light: Light, debug: bool = False):
             tracker.set_state(State.DONE)
             time.sleep(DONE_FLASH_SECONDS)
             tracker.end_turn()
-            rest_changed = True
 
         if result.get("failed"):  # ended on an error: no DONE flash
             print("[event] Turn ended on an error -> IDLE")
             tracker.end_turn()
-            rest_changed = True
-
-        if result.get("limited") is not None and bool(result["limited"]) != limited:
-            limited = bool(result["limited"])
-            print("[event] " + ("Out of tokens -> LIMIT" if limited else "Tokens available again"))
-            rest_changed = True
-
-        if rest_changed and not tracker.in_turn:
-            tracker.light.show(State.LIMIT if limited else State.IDLE)
 
         tracker.light.heartbeat()
         event_server.hub.wake.wait(POLL_INTERVAL)

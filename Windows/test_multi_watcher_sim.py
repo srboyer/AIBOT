@@ -159,7 +159,7 @@ step(slots, "t13 gpt finishes during claude outage", State.DONE)
 step(slots, "t14 claude reconnects, flash over", State.IDLE)
 assert slots[0].connected, "claude slot should be reconnected"
 
-# --- Out of tokens: LIMIT rests over IDLE, everything else shows over it ------
+# --- Out of tokens: no purple face -- it rests idle, with the low battery ------
 register_fake("fake_code", "FakeCode",
               connect_script=[True],
               poll_script=[
@@ -205,13 +205,14 @@ slots = [BackendSlot("fake_code"), BackendSlot("fake_gpt2")]
 step_shown(slots, "L1  both connect", State.IDLE)
 step_shown(slots, "L2  both idle", State.IDLE)
 step_shown(slots, "L3  code prompt sent", State.ANALYZING)
-step_shown(slots, "L4  turn fails on the limit: LIMIT, no DONE flash", State.LIMIT)
+step_shown(slots, "L4  turn fails on the limit: IDLE, no DONE flash, no purple face", State.IDLE)
 assert slots[0].state is State.IDLE and slots[0].limited
-step_shown(slots, "L5  no news keeps LIMIT", State.LIMIT)
-step_shown(slots, "L6  other app working shows over LIMIT", State.ANALYZING)
-step_shown(slots, "L7  its DONE flash shows over LIMIT", State.DONE)
-step_shown(slots, "L8  flash over: back to LIMIT", State.LIMIT)
-step_shown(slots, "L9  limit resets: IDLE", State.IDLE)
-assert STATE_PRIORITY[State.DONE] > STATE_PRIORITY[State.LIMIT] > STATE_PRIORITY[State.IDLE]
+assert chat_watcher.face_low([slots[0]]) == [True], "out of tokens: the low battery over its face"
+step_shown(slots, "L5  no news: still idle", State.IDLE)
+step_shown(slots, "L6  other app working", State.ANALYZING)
+step_shown(slots, "L7  its DONE flash", State.DONE)
+step_shown(slots, "L8  flash over: idle, not the purple face", State.IDLE)
+step_shown(slots, "L9  limit resets", State.IDLE)
+assert not slots[0].limited and chat_watcher.face_low([slots[0]]) == [False]
 
 print("\nAll simulation checks passed.")

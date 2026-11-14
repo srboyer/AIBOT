@@ -101,7 +101,8 @@ gpt.tick()
 check("looking at the tab clears UNREAD", gpt.state, State.IDLE)
 tab("1", "chatgpt", "idle", limited=True, focused=True)
 gpt.tick()
-check("limit banner -> LIMIT", gpt.shown_state, State.LIMIT)
+check("limit banner: no purple face, the low battery instead", (gpt.shown_state, cw.face_low([gpt])),
+      (State.IDLE, [True]))
 
 # The extension covering claude.ai makes the UI-Automation backend stand down.
 tab("9", "claude", "idle")
@@ -111,7 +112,9 @@ check("claude_web stands down for the extension", (claude_web.connected, claude_
 
 # --- rim colours ----------------------------------------------------------------------
 fs = cw.FaceSlots()
-check("accent: the limited app's colour", cw.accent_colors(slots, fs, [], gpt.shown_state), ["10A37F"])
+gpt.state = State.ANALYZING
+check("accent: the busy app's colour", cw.accent_colors(slots, fs, [], State.ANALYZING), ["10A37F"])
+gpt.state = State.IDLE
 check("accent: nothing while idle", cw.accent_colors(slots, fs, [], State.IDLE), [])
 
 # --- split faces: a third app's question takes a working app's side -----------------------
@@ -246,6 +249,50 @@ check("codex: a new turn going through clears it", b4.poll()["limited"], False)
 write("limit.jsonl", rate("codex", 100), rate("premium", None))
 check("codex: 100% isn't hidden by another limit's empty record", b4.poll()["limited"], True)
 
+# --- Codex: usage from older logs; running low ----------------------------------------
+# A limit hit five hours ago, in a log nobody's followed since, is known at start.
+old_day = os.path.join(home, "sessions", "2026", "11", "12")
+os.makedirs(old_day)
+for name in os.listdir(day):
+    os.remove(os.path.join(day, name))
+old_log = os.path.join(old_day, "yesterday.jsonl")
+with open(old_log, "w", encoding="utf-8") as f:
+    f.write(ev("task_started", ago=5 * 3600) + "\n" + rate("codex", 60) + "\n" +
+            done(ago=5 * 3600, started_ago=5 * 3600 + 30,
+                 err="You've hit your usage limit. Upgrade to Pro, purchase more credits or try again in 7h.") + "\n")
+os.utime(old_log, (time.time() - 5 * 3600, time.time() - 5 * 3600))
+b5 = cb.CodexBackend()
+b5.try_connect()
+check("codex: an old log isn't followed", len(b5.sessions), 0)
+r = b5.poll()
+check("codex: out of usage, from the history -> low battery", (r["limited"], r["low"]), (True, True))
+check("codex: ...until the time it gave", round((b5.limits["error"][1] - time.time()) / 3600, 1), 2.0)
+
+# The history can arrive in any order: a turn that went through after the error wins.
+lim = {}
+cb._note_limit_error(lim, None, time.time() - 60, True, started_at=time.time() - 120)
+cb._note_limit_error(lim, {"codex_error_info": "usage_limit_exceeded", "message": "try again in 3h"},
+                     time.time() - 600, True)
+check("codex: an error older than a turn that went through is history", cb.codex_limited(lim)[0], False)
+cb._note_limit_error(lim, {"codex_error_info": "usage_limit_exceeded", "message": "no time here"},
+                     time.time() - 30, True)
+check("codex: a newer error counts", cb.codex_limited(lim)[0], True)
+
+os.remove(old_log)
+b6 = cb.CodexBackend()
+write("low.jsonl", ev("task_started"), rate("codex", 92), item("reasoning"))
+b6.try_connect()
+r = b6.poll()
+check("codex: 92% used -> low battery", (r["low"], r["limited"]), (True, False))
+write("low.jsonl", rate("codex", 92, resets_in=-60))
+check("codex: the window reset -> not low", b6.poll()["low"], False)
+
+# Which faces MAICA puts the low battery on.
+low = NS(low=True, limited=False)
+out = NS(low=False, limited=True)
+fine = NS(low=False, limited=False)
+check("low battery: running low or used up, not otherwise", cw.face_low([low, out, fine]), [True, True, False])
+
 # --- ChatGPT desktop stands aside while the window shows Codex ------------------------
 import chatgpt_desktop_backend as cdb
 
@@ -298,6 +345,10 @@ light.send_config("br=80;ci=28DC5A")
 check("frames", light.frames, ["{apps:D97757,10A37F}", "{cheer:2}", "{cfg:br=80;ci=28DC5A}"])
 light.set_apps([])
 check("clear accent", light.frames[-1], "{app:}")
+light.set_low([True])
+light.set_low([False, True])
+light.set_low([])
+check("low battery frames", light.frames[-3:], ["{low:1}", "{low:01}", "{low:}"])
 
 print(f"\n{'All platform checks passed.' if not failures else f'{failures} FAILED'}")
 event_server.stop()

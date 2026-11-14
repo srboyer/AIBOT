@@ -179,6 +179,12 @@ class Light:
         else:
             self.send_frame("{apps:" + ",".join(colors[:2]) + "}")
 
+    def set_low(self, flags) -> None:
+        """A small low battery over each face whose app is running low on
+        usage: [True] = the single face, [False, True] = the right face of
+        two, [] = none."""
+        self.send_frame("{low:" + "".join("1" if f else "0" for f in flags) + "}")
+
     def cheer(self, level: int) -> None:
         """A celebration on top of whatever shows: 1 = a long task finished,
         2 = a very long one."""
@@ -320,7 +326,7 @@ class ArduinoLight(Light):
         return out
 
     def _reader(self):
-        """Board -> PC: text lines "!dtap", "!ptt:1", "!ptt:0", "!hello:v13";
+        """Board -> PC: text lines "!dtap", "!ptt:1", "!ptt:0", "!hello:v14";
         "!aud:<n>" is followed by n bytes of 16 kHz 16-bit mono PCM. Anything
         else (older firmware's chatter) is ignored."""
         while not self._closing:

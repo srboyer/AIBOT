@@ -57,8 +57,8 @@ class ChatBackend:
         indicator) should just always report False/"" for that key rather
         than raising.
 
-        Two optional keys (a backend that doesn't know them just leaves
-        them out):
+        Optional keys (a backend that doesn't know them just leaves them
+        out):
 
             "failed": bool,    # the turn just ended on an error, with no reply
                                # (back to idle without the green DONE flash)
@@ -66,6 +66,9 @@ class ChatBackend:
                                # usage limit is used up -- False once it isn't;
                                # None = can't tell this tick (keep the last
                                # answer). See usage_limit.py.
+            "low": bool,       # running low on usage (Codex: 90%+ of a
+                               # window used): a small battery over its face
+                               # (as it is while "limited")
         """
         raise NotImplementedError
 

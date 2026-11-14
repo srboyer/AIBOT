@@ -1,5 +1,12 @@
 /*
-  maica_status_classicbt.ino  --  v12 (MAICA PCB, ESP32-WROVER-E)
+  maica_status_classicbt.ino  --  v14 (MAICA PCB, ESP32-WROVER-E)
+
+  v14: running low. While an app is running low on usage (Codex: 90%+ of a
+  window used, or used up), a small battery with one bar left sits above its
+  face, whatever its status: "{low:1}", or "{low:01}" for the right face of
+  two. Older firmware ignores the frame. (The PC app no longer sends the
+  out-of-tokens face below -- it stayed up for hours -- but the board still
+  knows it.)
 
   v12: out of tokens. When an AI app has used up its usage limit (Claude's
   5-hour or weekly limit, a ChatGPT plan limit, an API account out of
@@ -644,7 +651,7 @@ void drawSplash() {
   tft.print(faceName);
   tft.setTextSize(2);
   tft.setCursor(48, 105);           // 12 chars x 12px = 144px, centred
-  tft.print("firmware v13");
+  tft.print("firmware v14");
   tft.setTextColor(BLACK);
   const char *names[3] = {"RED", "GRN", "BLU"};
   for (int i = 0; i < 3; i++) {     // 3 chars x 12px, centred in each bar
@@ -814,6 +821,9 @@ void handleFrame(char *t, unsigned long now) {
     applyConfig(arg, true);
   } else if (!strcmp(t, "heard")) {
     faces.heard(arg[0] == '1', now);
+  } else if (!strcmp(t, "low")) {  // running low, per face: "1", "01" (right face), ""
+    bool on[2] = {arg[0] == '1', arg[0] && arg[1] == '1'};
+    faces.setLows((int)strlen(arg) < 2 ? (int)strlen(arg) : 2, on);
   }
 }
 
@@ -963,7 +973,7 @@ void setup() {
 #endif
   Serial.begin(115200);  // USB, status/debug output only -- commands come over Bluetooth
   delay(500);
-  Serial.println("\n=== MAICA status firmware v13 (Classic Bluetooth) ===");
+  Serial.println("\n=== MAICA status firmware v14 (Classic Bluetooth) ===");
   Serial.printf("Chip: %s rev %d, %d cores @ %lu MHz, board rev %d\n", ESP.getChipModel(), ESP.getChipRevision(),
                 ESP.getChipCores(), (unsigned long)ESP.getCpuFreqMHz(), BOARD_REV);
 
@@ -1041,7 +1051,7 @@ void loop() {
     } else {
       wakeScreen(now);
       faces.greet(now);  // hello!
-      sendEvent("!hello:v13\n");
+      sendEvent("!hello:v14\n");
     }
   }
   if (connected) connectedLastAt = now;

@@ -119,6 +119,9 @@ class ChatGPTWebBackend(ChatGPTDesktopBackend):
             time.sleep(5)
         print("Watching chatgpt.com in the browser. Type a prompt directly in the tab.")
 
+    def _codex_showing(self, debug: bool = False) -> bool:
+        return False  # the desktop app's mode switch; a browser tab has none
+
     def _page_visible(self) -> bool:
         # Only the active tab is exposed: when chatgpt.com isn't it, finding
         # no limit banner says nothing (see LimitBannerWatch.check).

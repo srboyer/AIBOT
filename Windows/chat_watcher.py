@@ -355,7 +355,8 @@ class BackendSlot:
         #   limited -- True while the app is out of tokens, False once it
         #              isn't; absent or None = no news, keep what we had.
         if result.get("failed"):
-            print(f"[{self.name}] Turn ended on an error -> IDLE")
+            why = result["failed"] if isinstance(result["failed"], str) else "Turn ended on an error"
+            print(f"[{self.name}] {why} -> IDLE")
             self.state = State.IDLE
             self.done_until = 0.0
             self.turn_started = None

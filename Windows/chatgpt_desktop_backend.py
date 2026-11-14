@@ -36,6 +36,8 @@ face shows over the out-of-tokens one anyway.
 See chat_backend.py for the interface this implements.
 """
 
+import json
+import os
 import sys
 import time
 
@@ -47,6 +49,37 @@ from usage_limit import LimitBannerWatch
 # Matches "Custom answer for Where are you going?", "Custom answer for
 # What's your budget?", etc. -- see module docstring.
 QUESTION_EDIT_TITLE_RE = r"^Custom answer for .*"
+
+
+MODE_CHECK_EVERY = 1.0  # seconds between looks at which mode / conversation is showing
+
+
+def codex_thread_names() -> set:
+    """Titles of Codex's threads (~/.codex/session_index.jsonl), cached until
+    the file changes. A ChatGPT conversation handed off to Codex ("thread_
+    source": "chatgpt_handoff") keeps its title, which is the page's name."""
+    path = os.path.join(os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex"),
+                        "session_index.jsonl")
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return set()
+    cache = codex_thread_names.__dict__
+    if cache.get("mtime") != mtime:
+        names = set()
+        try:
+            with open(path, encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        n = json.loads(line).get("thread_name")
+                    except Exception:
+                        continue
+                    if n:
+                        names.add(n.strip())
+        except OSError:
+            pass
+        cache.update(mtime=mtime, names=names)
+    return cache["names"]
 
 
 def in_conversation(name: str, class_name: str) -> bool:
@@ -96,11 +129,56 @@ class ChatGPTDesktopBackend(ChatBackend):
         self.win.window_text()  # raises if the window has gone stale
 
     def poll(self, debug: bool = False) -> dict:
+        if self._codex_showing(debug):
+            # Codex's work in this window -- Codex mode, or a conversation
+            # handed off to Codex -- is the codex backend's (from its logs);
+            # reading the same Stop button here too would show it twice.
+            result = self._empty_result()
+            if self.armed or self.awaiting_answer:
+                self.armed = self.awaiting_answer = False
+                result["failed"] = "Codex is showing in the window; the codex backend has it"
+            return result
         result = self._poll_turn(debug=debug)
         result["limited"] = self.limit_watch.check(
             lambda: self.win if self._page_visible() else None,
             busy=self.armed or self.awaiting_answer, debug=debug, label=self.name)
         return result
+
+    @staticmethod
+    def _empty_result() -> dict:
+        return {"prompt_sent": False, "question_started": False, "answer_received": False,
+                "thinking_started": False, "thinking_ended": False, "finished": False}
+
+    def _codex_showing(self, debug: bool = False) -> bool:
+        """Whether the window is showing Codex rather than a ChatGPT chat:
+        the mode button reads "Switch mode, current mode: <mode>", and a
+        conversation handed off to Codex keeps its title as the page's name
+        (codex_thread_names). Looked at every MODE_CHECK_EVERY seconds; two
+        native UI Automation lookups, ~15 ms each. Unknown -> False (as before)."""
+        now = time.monotonic()
+        if now < getattr(self, "_mode_checked_at", 0.0) + MODE_CHECK_EVERY:
+            return getattr(self, "_mode_codex", False)
+        self._mode_checked_at = now
+        codex = False
+        try:
+            from pywinauto.uia_defines import IUIA
+            iuia = IUIA().iuia
+            root = self.win.wrapper_object().element_info.element
+            mode = root.FindFirst(4, iuia.CreatePropertyConditionEx(30005, "current mode:", 3))  # Name contains
+            mode_name = (mode.CurrentName if mode else "") or ""
+            if mode_name and not mode_name.rstrip().lower().endswith("chatgpt"):
+                codex = True
+            else:
+                page = root.FindFirst(4, iuia.CreatePropertyCondition(30011, "RootWebArea"))  # AutomationId
+                title = ((page.CurrentName if page else "") or "").strip()
+                codex = bool(title) and title in codex_thread_names()
+            if debug:
+                print(f"[debug] chatgpt_desktop: mode={mode_name!r} codex_showing={codex}")
+        except Exception as e:
+            if debug:
+                print(f"[debug] chatgpt_desktop: mode check failed ({e})")
+        self._mode_codex = codex
+        return codex
 
     def _page_visible(self) -> bool:
         """Whether ChatGPT's page is what the window is showing (always, for

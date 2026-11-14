@@ -217,6 +217,41 @@ b3.try_connect()
 r = b3.poll()
 check("codex: question already open at startup is shown", (b3._level(), r["question_started"]), ("question", True))
 
+# --- ChatGPT desktop stands aside while the window shows Codex ------------------------
+import chatgpt_desktop_backend as cdb
+
+with open(os.path.join(home, "session_index.jsonl"), "w", encoding="utf-8") as f:
+    f.write(json.dumps({"id": "a", "thread_name": "Update MAICA front shell mount"}) + "\n")
+check("codex thread titles read", cdb.codex_thread_names(), {"Update MAICA front shell mount"})
+
+
+class FakeChatGPT(cdb.ChatGPTDesktopBackend):
+    codex = False
+    stop = False
+
+    def __init__(self):
+        super().__init__()
+        self.limit_watch.check = lambda *a, **k: False
+
+    def _codex_showing(self, debug=False):
+        return self.codex
+
+    def _question_present(self):
+        return False
+
+    def _button_exists(self, title):
+        return self.stop
+
+
+g = FakeChatGPT()
+g.stop = True
+check("chatgpt: its own reply counts", g.poll()["prompt_sent"], True)
+g.codex = True
+r = g.poll()
+check("chatgpt: switched to Codex mid-reply -> ends quietly", (bool(r.get("failed")), r["finished"], g.armed),
+      (True, False, False))
+check("chatgpt: Codex's Stop button isn't ChatGPT's", g.poll()["prompt_sent"], False)
+
 # --- the board's events -----------------------------------------------------------------
 class FakeLight(Light):
     def __init__(self):

@@ -1,0 +1,7 @@
+{
+  "name": "maica-extension-tests",
+  "private": true,
+  "description": "Runs content.js in jsdom pages that mimic chat UIs. npm install && npm test",
+  "scripts": { "test": "node test_content.js" },
+  "devDependencies": { "jsdom": "24.1.3" }
+}

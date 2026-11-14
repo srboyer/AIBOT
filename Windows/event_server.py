@@ -30,6 +30,8 @@ watcher carries on with polling alone.
 """
 
 import json
+import os
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -167,6 +169,22 @@ class _Handler(BaseHTTPRequestHandler):
         return self._reply(200, {"ok": True, "commands": hub.take_commands(source, key)})
 
 
+class _Server(ThreadingHTTPServer):
+    # http.server sets SO_REUSEADDR, and on Windows that lets a second
+    # program bind a port another one is already listening on -- so a second
+    # MAICA app would "start" too and fight the first over the Bluetooth
+    # port. Exclusive use makes the second bind fail, which is what start()
+    # (and so the app's single-instance check) relies on. On Mac/Linux
+    # SO_REUSEADDR only skips TIME_WAIT, which is what we want there.
+    allow_reuse_address = os.name != "nt"
+    daemon_threads = True
+
+    def server_bind(self):
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 _server = None
 
 
@@ -176,10 +194,9 @@ def start(port: int = PORT) -> bool:
     if _server is not None:
         return True
     try:
-        _server = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
+        _server = _Server(("127.0.0.1", port), _Handler)
     except OSError:
         return False
-    _server.daemon_threads = True
     threading.Thread(target=_server.serve_forever, name="maica-events", daemon=True).start()
     return True
 

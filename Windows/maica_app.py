@@ -166,6 +166,9 @@ class App:
     def quit(self, *_):
         self.stop.set()
         event_server.hub.wake.set()
+        # If anything is stuck (say a Bluetooth write), don't linger as an
+        # invisible process still holding the port -- leave regardless.
+        threading.Timer(3.0, lambda: os._exit(0)).start()
         if self.icon is not None:
             self.icon.stop()
 

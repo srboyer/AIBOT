@@ -39,7 +39,9 @@ def matches(target: dict, title, process) -> bool:
         return bool(target.get("mac_app")) and process == target["mac_app"]
     ok = False
     if target.get("process") and process:
-        ok = process.lower() == target["process"].lower()
+        names = target["process"]  # one program name, or a list of them
+        names = [names] if isinstance(names, str) else names
+        ok = process.lower() in (n.lower() for n in names)
         if not ok:
             return False
     if target.get("title"):

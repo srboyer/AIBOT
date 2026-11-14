@@ -124,7 +124,9 @@ def limit_state(rate_limits, now=None):
 class CodexBackend(ChatBackend):
     name = "codex"
     app_id = "codex"
-    focus_target = {"process": "Codex.exe", "mac_app": "Codex"}
+    # The Codex app is ChatGPT.exe on Windows (package OpenAI.Codex, seen
+    # 2026-11-13); Codex.exe in case a standalone build ships.
+    focus_target = {"process": ["ChatGPT.exe", "Codex.exe"], "mac_app": "Codex"}
 
     def __init__(self):
         self.sessions = {}

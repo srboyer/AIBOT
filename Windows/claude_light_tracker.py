@@ -56,6 +56,7 @@ class State(Enum):
     DONE = "done"             # green
     IDLE = "idle"             # off / neutral
     LIMIT = "limit"           # out of tokens: the app's usage limit is used up (see usage_limit.py)
+    UNREAD = "unread"         # a reply finished while you were elsewhere, not looked at yet
 
 
 STATE_COLORS = {
@@ -65,6 +66,7 @@ STATE_COLORS = {
     State.DONE: "\033[42m\033[30m",       # black on green
     State.IDLE: "\033[42m\033[30m",       # black on green -- idle == ready == green, not off
     State.LIMIT: "\033[45m\033[97m",      # white on magenta
+    State.UNREAD: "\033[46m\033[30m",     # black on cyan
 }
 
 # The single-state commands every board understands: one ASCII byte each.
@@ -79,6 +81,7 @@ STATE_COMMANDS = {
     State.DONE: b"D",
     State.IDLE: b"D",  # idle/ready reuses the green command -- no sketch changes needed
     State.LIMIT: b"DL",
+    State.UNREAD: b"DU",  # same trick: older boards just go idle
 }
 RESET = "\033[0m"
 
@@ -159,6 +162,37 @@ class Light:
         screen ignore this (default no-op)."""
         pass
 
+    # -- MAICA extras: "{...}" frames, which older firmware ignores ----------
+
+    def send_frame(self, text: str) -> None:
+        """Send a "{...}" frame (see the sketch's handleFrame). Lights without
+        a screen ignore these (default no-op)."""
+        pass
+
+    def set_apps(self, colors) -> None:
+        """Tint the rim with the colour of the app each face is showing:
+        [] = none, ["D97757"] = one face, two colours = split faces."""
+        if not colors:
+            self.send_frame("{app:}")
+        elif len(colors) == 1:
+            self.send_frame("{app:" + colors[0] + "}")
+        else:
+            self.send_frame("{apps:" + ",".join(colors[:2]) + "}")
+
+    def cheer(self, level: int) -> None:
+        """A celebration on top of whatever shows: 1 = a long task finished,
+        2 = a very long one."""
+        self.send_frame("{cheer:%d}" % level)
+
+    def send_config(self, cfg: str) -> None:
+        """Personalisation (settings.face_config()); the board keeps it."""
+        self.send_frame("{cfg:" + cfg + "}")
+
+    def poll_events(self) -> list:
+        """Events the board sent since the last call: ("dtap",), ("ptt", 1|0),
+        ("audio", bytes), ("hello", version). Default: none."""
+        return []
+
 
 # Split-face frame: "<" + one lowercase letter per face + ">", e.g. b"<at>"
 # for analyzing on the left and thinking on the right, b"<>" for one face.
@@ -171,6 +205,7 @@ _FACE_LETTERS = {
     State.DONE: b"d",
     State.IDLE: b"d",
     State.LIMIT: b"l",
+    State.UNREAD: b"u",
 }
 
 
@@ -190,6 +225,9 @@ class ConsoleLight(Light):
             print("[faces] split: " + " | ".join(s.value.upper() for s in states))
         else:
             print("[faces] one face")
+
+    def send_frame(self, text: str) -> None:
+        print(f"[frame] {text}")
 
 
 class GPIOLight(Light):
@@ -214,6 +252,7 @@ class GPIOLight(Light):
             State.DONE: green_pin,
             State.IDLE: green_pin,
             State.LIMIT: red_pin,  # out of tokens: no 4th LED, so it shares red
+            State.UNREAD: green_pin,
         }
 
         GPIO.setmode(GPIO.BCM)
@@ -243,21 +282,71 @@ class ArduinoLight(Light):
     _COMMANDS = STATE_COMMANDS
 
     def __init__(self, port: str, baud: int = 9600):
+        import queue
+        import threading
         import serial  # pyserial; imported here so this file still loads without it installed
-        self.ser = serial.Serial(port, baud, timeout=1)
+        self.ser = serial.Serial(port, baud, timeout=0.5)
         # Arduino resets when the serial port opens; give the bootloader time
         # to finish before sending commands, or the first command gets dropped.
         time.sleep(2)
+        # MAICA talks back on the same link (taps, push-to-talk audio): a
+        # reader thread turns its "!..." lines into events for poll_events().
+        self._events = queue.Queue()
+        self._closing = False
+        self._write_lock = threading.Lock()
+        threading.Thread(target=self._reader, name="maica-reader", daemon=True).start()
+
+    def _write(self, data: bytes):
+        with self._write_lock:
+            self.ser.write(data)
+            self.ser.flush()
 
     def show(self, state: State) -> None:
-        self.ser.write(self._COMMANDS[state])
-        self.ser.flush()
+        self._write(self._COMMANDS[state])
 
     def show_faces(self, states) -> None:
-        self.ser.write(faces_frame(states))
-        self.ser.flush()
+        self._write(faces_frame(states))
+
+    def send_frame(self, text: str) -> None:
+        self._write(text.encode("ascii", "replace"))
+
+    def poll_events(self) -> list:
+        out = []
+        while not self._events.empty():
+            out.append(self._events.get_nowait())
+        return out
+
+    def _reader(self):
+        """Board -> PC: text lines "!dtap", "!ptt:1", "!ptt:0", "!hello:v13";
+        "!aud:<n>" is followed by n bytes of 16 kHz 16-bit mono PCM. Anything
+        else (older firmware's chatter) is ignored."""
+        while not self._closing:
+            try:
+                line = self.ser.readline()
+            except Exception:
+                return  # port closed or gone: the watcher notices on its next write
+            if not line.startswith(b"!"):
+                continue
+            text = line.strip().decode("ascii", "replace")
+            name, _, arg = text[1:].partition(":")
+            if name == "aud":
+                try:
+                    n = int(arg)
+                except ValueError:
+                    continue
+                data = b""
+                deadline = time.monotonic() + 2
+                while len(data) < n and time.monotonic() < deadline:
+                    data += self.ser.read(n - len(data))
+                if len(data) == n:
+                    self._events.put(("audio", data))
+            elif name == "ptt":
+                self._events.put(("ptt", 1 if arg == "1" else 0))
+            elif name in ("dtap", "hello", "shake", "pwr"):
+                self._events.put((name, arg))
 
     def close(self) -> None:
+        self._closing = True
         self.ser.close()
 
 
@@ -275,6 +364,16 @@ def find_classic_bt_port(device_name: str = "ClaudeStatusMatrix") -> str:
     This shells out to PowerShell's Get-PnpDevice (the same query used to
     debug this by hand) to do that matching automatically.
     """
+
+    if sys.platform == "darwin":
+        # macOS makes a serial device for a paired Classic Bluetooth SPP
+        # device, named after it: /dev/cu.<name> (sometimes with a suffix).
+        import glob
+        ports = sorted(glob.glob(f"/dev/cu.{device_name}*"))
+        if not ports:
+            raise RuntimeError(f"{device_name!r} isn't paired (no /dev/cu.{device_name}). Pair it in "
+                               "System Settings > Bluetooth first.")
+        return ports[0]
 
     def _pnp_query(ps_filter: str):
         script = (
@@ -400,6 +499,14 @@ class BLELight(Light):
         # Its own write: BLE firmware reads only the first byte of each write,
         # so older boards see "<" and ignore it.
         data = faces_frame(states)
+
+        async def _write():
+            await self.client.write_gatt_char(self.RX_CHAR_UUID, data, response=True)
+
+        self._asyncio.run_coroutine_threadsafe(_write(), self._loop).result(timeout=5)
+
+    def send_frame(self, text: str) -> None:
+        data = text.encode("ascii", "replace")
 
         async def _write():
             await self.client.write_gatt_char(self.RX_CHAR_UUID, data, response=True)

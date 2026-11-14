@@ -194,6 +194,77 @@ const float LINK_X = 222.0f, LINK_Y = 222.0f, LINK_R = 5.0f;
 #endif
 const float LINK_GREY = 170 / 255.0f;
 
+// The app's colour on the rim (Engine::setAccent): a band along the bottom of
+// the circle, ACC_R0..ACC_R1 from the centre and ACC_HALF either side of
+// straight down (radians); on a square screen, a bar along the bottom edge.
+// It fades in and out over ACC_FADE_MS.
+#if FACE_ROUND
+const float ACC_R0 = 111.0f, ACC_R1 = 118.0f, ACC_HALF = 0.85f;
+#else
+const float ACC_R0 = 0, ACC_R1 = 0, ACC_HALF = 0;
+const float ACC_BAR_Y0 = 230.0f, ACC_BAR_Y1 = 236.0f, ACC_BAR_X0 = 50.0f, ACC_BAR_X1 = 190.0f;
+#endif
+const float ACC_ALPHA = 0.9f;
+const float ACC_COS = cosf(ACC_HALF), ACC_SIN = sinf(ACC_HALF);
+const uint32_t ACC_FADE_MS = 350;
+
+// "Done, unread" ('U'): happy eyes glancing at a twinkling four-point star.
+#if FACE_ROUND
+const float SPARK_X = 178.0f, SPARK_Y = 66.0f;
+#else
+const float SPARK_X = 200.0f, SPARK_Y = 46.0f;
+#endif
+const float SPARK_R = 13.0f, SPARK_W = 3.2f, SPARK_LIGHT = 0.92f;
+const uint32_t SPARK_TWINKLE_MS = 1700;
+
+// Celebration (Engine::cheer): confetti bursting up from the bottom, falling
+// back under gravity while spinning, plus a joyful hop.
+const int MAX_CONFETTI = 22;
+const uint32_t CHEER_MS[3] = {0, 2300, 3200};
+const float CONF_GRAVITY = 260.0f;  // px/s^2
+const float CONF_W = 2.4f, CONF_H = 4.2f;
+const uint8_t CONF_COLORS[6][3] = {{255, 94, 98}, {255, 205, 40}, {80, 220, 120}, {70, 170, 255}, {200, 120, 255},
+                                   {255, 255, 255}};
+
+// Overlays, each a few seconds: hello when the computer connects, dizzy when
+// shaken, a nod or a small head shake after push-to-talk ("heard" or not).
+const uint32_t GREET_MS = 1400, DIZZY_MS = 2600, HEARD_MS = 900;
+
+// Push-to-talk: while listening, sound arcs beside the eyes light up with the
+// voice level (Engine::setListening).
+#if FACE_ROUND
+const float EAR_X = 40.0f, EAR_Y = 116.0f;
+#else
+const float EAR_X = 26.0f, EAR_Y = 116.0f;
+#endif
+const float EAR_R1 = 9.0f, EAR_R2 = 17.0f, EAR_HW = 2.0f, EAR_HALF = 0.75f;
+
+// A question left waiting gets impatient: after IMPATIENT_AFTER_MS the "!"
+// shakes harder and the eyes bob, reaching full impatience IMPATIENT_RAMP_MS later.
+const uint32_t IMPATIENT_AFTER_MS = 45000, IMPATIENT_RAMP_MS = 60000;
+
+// ---- Runtime settings (the sketch's "{cfg:...}" frames; kept in flash) ------
+
+// Status colours, by status letter: changeable at run time (personalisation).
+struct Palette { float r[7], g[7], b[7]; };
+inline int paletteIndex(char st) {
+  switch (st) {
+    case 'A': return 1; case 'T': return 2; case 'Q': return 3; case 'L': return 4; case 'U': return 5;
+  }
+  return 0;  // 'D' and anything else: idle
+}
+inline Palette &palette() {
+  static Palette p = {{40 / 255.0f, 40 / 255.0f, 1.0f, 1.0f, 150 / 255.0f, 40 / 255.0f, 0},
+                      {220 / 255.0f, 120 / 255.0f, 205 / 255.0f, 64 / 255.0f, 100 / 255.0f, 220 / 255.0f, 0},
+                      {90 / 255.0f, 1.0f, 0.0f, 56 / 255.0f, 220 / 255.0f, 90 / 255.0f, 0}};
+  return p;
+}
+inline void setStateColor(char st, uint8_t r, uint8_t g, uint8_t b) {
+  int i = paletteIndex(st);
+  palette().r[i] = r / 255.0f; palette().g[i] = g / 255.0f; palette().b[i] = b / 255.0f;
+  if (st == 'D') { palette().r[5] = r / 255.0f; palette().g[5] = g / 255.0f; palette().b[5] = b / 255.0f; }
+}
+
 // Timing (ms).
 const uint32_t TO_ANALYZING_MS = 650, TO_THINKING_MS = 800, TO_QUESTION_MS = 900, TO_IDLE_MS = 950;
 const uint32_t TO_LIMIT_MS = 1300;  // a slow drain
@@ -284,6 +355,11 @@ const float Z_FROM_X = 172.0f, Z_FROM_Y = 100.0f, Z_TO_X = 216.0f, Z_TO_Y = 26.0
 #endif
 const uint32_t Z_MS = 3000;
 const float Z_HALF = 7.0f, Z_STROKE = 2.0f, Z_LIGHT = 0.85f;
+
+// Eye size and the bored/asleep timers, changeable at run time (the sketch's
+// "{cfg:...}" frames).
+struct Tuning { float eyeScale = 1.0f; uint32_t boredAfterS = FACE_BORED_AFTER_S, sleepAfterS = FACE_SLEEP_AFTER_S; };
+inline Tuning &tuning() { static Tuning t; return t; }
 
 // ---- Small helpers ----------------------------------------------------------
 
@@ -462,6 +538,38 @@ FACE_HOT float sdBattBar(float lx, float ly) {
   return sdRoundBox<SQ>(lx - BATT_BAR_X, ly, BATT_BAR_W, BATT_BAR_H, 1.2f);
 }
 
+// A rhombus with half-diagonals bx (along x) and by (Inigo Quilez's sdRhombus).
+template <float (*SQ)(float)>
+FACE_HOT float sdRhombus(float px, float py, float bx, float by) {
+  px = fabsf(px); py = fabsf(py);
+  float h = clampf(((bx - 2 * px) * bx - (by - 2 * py) * by) / (bx * bx + by * by), -1, 1);
+  float dx = px - 0.5f * bx * (1 - h), dy = py - 0.5f * by * (1 + h);
+  float d = SQ(dx * dx + dy * dy);
+  return (px * by + py * bx - bx * by) < 0 ? -d : d;
+}
+
+// The "unread" sparkle: a four-point star, two crossed thin rhombi.
+template <float (*SQ)(float)>
+FACE_HOT float sdSpark(float lx, float ly) {
+  float a = sdRhombus<SQ>(lx, ly, SPARK_W, SPARK_R), b = sdRhombus<SQ>(lx, ly, SPARK_R, SPARK_W);
+  return a < b ? a : b;
+}
+
+// Angular part of a band around direction (dx, dy) (unit), half-angle with
+// cos ch / sin sh: negative inside the wedge, positive outside, in pixels.
+FACE_HOT float wedge(float px, float py, float dx, float dy, float ch, float sh) {
+  float along = px * dx + py * dy, across = fabsf(dx * py - dy * px);
+  return across * ch - along * sh;
+}
+
+// A stroke of radius R and half-width hw around the origin, limited to the
+// wedge (the listening arcs, and the rim band with R mid-band).
+template <float (*SQ)(float)>
+FACE_HOT float sdArcStroke(float px, float py, float dx, float dy, float ch, float sh, float R, float hw) {
+  float d = fabsf(SQ(px * px + py * py) - R) - hw, w = wedge(px, py, dx, dy, ch, sh);
+  return d > w ? d : w;
+}
+
 // ---- Pose: everything about the eyes that animates --------------------------
 
 struct Pose {
@@ -478,6 +586,7 @@ struct Pose {
                               // negative slants them down toward the outer corners)
   float vein, zs;             // the anger mark and the sleeping Zs: visibility 0..1
   float batt, battPop;        // the empty battery (LIMIT): visibility 0..1, size multiplier
+  float spark;                // the "unread" sparkle: visibility 0..1
 };
 
 // ---- Frame: what one frame draws, precomputed for rendering ----------------
@@ -516,7 +625,13 @@ struct Region {
   bool ring;
   float ox, oy, r0, r1;
 };
-const int MAX_REGIONS = 7 + MAX_WIPES + MAX_RIPPLES + 1;
+const int MAX_REGIONS = 11 + MAX_WIPES + MAX_RIPPLES + 1 + MAX_CONFETTI;
+
+// Which extra shapes a pixel may need (shadePixel's `on` mask).
+enum : int { ON_DOTS = 1, ON_MARK = 2, ON_VEIN = 4, ON_Z = 8, ON_BATT = 16, ON_LINK = 32, ON_ACC = 64,
+             ON_SPARK = 128, ON_EARS = 256, ON_CONF = 512 };
+
+struct Confetto { float x, y, c, s, r, g, b, a; };  // centre, rotation cos/sin, colour, opacity
 
 // A ripple as drawn this frame: centre, radius of its leading wave, the
 // squared radii between which its waves are, and its strength.
@@ -543,6 +658,16 @@ struct Frame {
   Rect zsBox;
   float battK, battX, battY, battScale, battInv, battLow;  // battLow: the last bar's blink, 0..1
   Rect battBox;
+  float sparkK, sparkX, sparkY, sparkS, sparkInv, sparkC, sparkSn;
+  Rect sparkBox;
+  // Filled in by Engine::update (they come from the engine, not the pose):
+  float accK, accR, accG, accB, accCx, accCy, accRm, accHw;  // rim band: centre, mid radius, half-width
+  Rect accBox;
+  float earK, earLvl, earX[2], earY, earS, earInv;          // listening arcs, left and right
+  Rect earBox[2];
+  int nConf;
+  Confetto conf[MAX_CONFETTI];
+  Rect confBox[MAX_CONFETTI], confAll;
   int nRipples;
   RippleGeo ripples[MAX_RIPPLES];
   float rippleDisp[RIPPLE_LUT], rippleLight[RIPPLE_LUT];  // one wave packet, unit strength
@@ -674,6 +799,18 @@ inline void Frame::prepare(const Pose &p, float open, float breathe, float float
   battLow = clamp01(0.5f + 3.0f * cosf(TAU * (now % BATT_BLINK_MS) / BATT_BLINK_MS));
   float bxr = BATT_EXTENT_X * battScale, byr = BATT_EXTENT_Y * battScale;
   battBox = battK > 0.001f ? boxAround(battX - bxr, battY - byr, battX + bxr, battY + byr, 2) : Rect{0, 0, 0, 0};
+
+  // The "unread" sparkle twinkles: it pulses in size and turns slowly.
+  sparkK = clamp01(p.spark);
+  float tw = (float)(now % SPARK_TWINKLE_MS) / SPARK_TWINKLE_MS;
+  sparkS = maxf((0.55f + 0.45f * sparkK) * (0.85f + 0.2f * sinf(TAU * tw)), 0.05f) * v.s;
+  sparkInv = 1.0f / sparkS;
+  float sa = 0.25f * sinf(TAU * (float)(now % 5200) / 5200.0f);
+  sparkC = cosf(sa); sparkSn = sinf(sa);
+  sparkX = v.X(SPARK_X);
+  sparkY = v.Y(SPARK_Y + 2.0f * sinf(TAU * (float)(now % 3300) / 3300.0f));
+  float sr = (SPARK_R + 1) * sparkS;
+  sparkBox = sparkK > 0.001f ? boxAround(sparkX - sr, sparkY - sr, sparkX + sr, sparkY + sr, 2) : Rect{0, 0, 0, 0};
 }
 
 inline uint16_t rgb565(float r, float g, float b) {
@@ -788,7 +925,7 @@ FACE_HOT bool inBox(const Rect &b, float x, float y) { return x >= b.x0 && x < b
 // found, the reference all.
 template <float (*SQ)(float)>
 FACE_HOT uint16_t shadePixel(const Frame &f, float x, float y, float sx, float sy, float light, int eyeMask,
-                             bool dotsOn, bool markOn, bool veinOn, bool zOn, bool battOn, bool linkOn) {
+                             int on) {
   float r, g, b;
   background<SQ>(f, sx, sy, &r, &g, &b);
   float cr = r, cg = g, cb = b;
@@ -807,24 +944,24 @@ FACE_HOT uint16_t shadePixel(const Frame &f, float x, float y, float sx, float s
     }
   }
   float k = 0;
-  if (dotsOn) {
+  if (on & ON_DOTS) {
     for (int i = 0; i < 3; i++) {
       float dx = sx - f.dotX[i], dy = sy - f.dotY[i];
       k = maxf(k, clamp01(0.5f - (SQ(dx * dx + dy * dy) - f.dotRad[i])) * f.dotK[i]);
     }
   }
-  if (markOn) k = maxf(k, clamp01(0.5f - markDistance<SQ>(f, sx, sy)) * f.markK);
-  if (veinOn) {
+  if (on & ON_MARK) k = maxf(k, clamp01(0.5f - markDistance<SQ>(f, sx, sy)) * f.markK);
+  if (on & ON_VEIN) {
     float dv = sdVein<SQ>((sx - f.veinX) * f.veinInv, (sy - f.veinY) * f.veinInv) * f.veinScale;
     k = maxf(k, clamp01(0.5f - dv) * f.veinK);
   }
-  if (battOn) {
+  if (on & ON_BATT) {
     float bx = (sx - f.battX) * f.battInv, by = (sy - f.battY) * f.battInv;
     k = maxf(k, clamp01(0.5f - sdBattShell<SQ>(bx, by) * f.battScale) * f.battK);
     if (f.battLow > 0) k = maxf(k, clamp01(0.5f - sdBattBar<SQ>(bx, by) * f.battScale) * f.battK * f.battLow);
   }
   if (k > 0) { cr += (kr - cr) * k; cg += (kg - cg) * k; cb += (kb - cb) * k; }
-  if (zOn) {  // the Zs are light
+  if (on & ON_Z) {  // the Zs are light
     float z = 0;
     for (int i = 0; i < 3; i++) {
       if (f.zA[i] <= 0) continue;
@@ -837,13 +974,55 @@ FACE_HOT uint16_t shadePixel(const Frame &f, float x, float y, float sx, float s
       cb += (b + (1 - b) * Z_LIGHT - cb) * z;
     }
   }
+  float glow = 0;  // light shapes: the sparkle and the listening arcs
+  if (on & ON_SPARK) {
+    float dx = sx - f.sparkX, dy = sy - f.sparkY;
+    float lx = (dx * f.sparkC + dy * f.sparkSn) * f.sparkInv, ly = (-dx * f.sparkSn + dy * f.sparkC) * f.sparkInv;
+    glow = maxf(glow, clamp01(0.5f - sdSpark<SQ>(lx, ly) * f.sparkS) * f.sparkK);
+  }
+  if (on & ON_EARS) {
+    for (int i = 0; i < 2; i++) {
+      float dx = (sx - f.earX[i]) * f.earInv, dy = (sy - f.earY) * f.earInv, dir = i == 0 ? -1.0f : 1.0f;
+      const float ch = 0.7316889f, sh = 0.6816388f;  // cos, sin of EAR_HALF
+      float d1 = sdArcStroke<SQ>(dx, dy, dir, 0, ch, sh, EAR_R1, EAR_HW) * f.earS;
+      float d2 = sdArcStroke<SQ>(dx, dy, dir, 0, ch, sh, EAR_R2, EAR_HW) * f.earS;
+      float a2 = clamp01((f.earLvl - 0.35f) / 0.3f);  // the outer arc lights up with a louder voice
+      glow = maxf(glow, maxf(clamp01(0.5f - d1) * (0.45f + 0.55f * clamp01(f.earLvl * 2.5f)),
+                             clamp01(0.5f - d2) * a2) * f.earK);
+    }
+  }
+  if (glow > 0) {
+    cr += (r + (1 - r) * SPARK_LIGHT - cr) * glow;
+    cg += (g + (1 - g) * SPARK_LIGHT - cg) * glow;
+    cb += (b + (1 - b) * SPARK_LIGHT - cb) * glow;
+  }
+  if (on & ON_CONF) {  // confetti: small spinning coloured strips
+    for (int i = 0; i < f.nConf; i++) {
+      if (!inBox(f.confBox[i], x, y)) continue;
+      const Confetto &c = f.conf[i];
+      float dx = x - c.x, dy = y - c.y;
+      float lx = dx * c.c + dy * c.s, ly = -dx * c.s + dy * c.c;
+      float cov = clamp01(0.5f - sdRoundBox<SQ>(lx, ly, CONF_W * f.view.s, CONF_H * f.view.s, 0.8f)) * c.a;
+      if (cov > 0) { cr += (c.r - cr) * cov; cg += (c.g - cg) * cov; cb += (c.b - cb) * cov; }
+    }
+  }
+  if (on & ON_ACC) {  // the app's colour on the rim (screen position: not bent by ripples)
+    float dx = x - f.accCx, dy = y - f.accCy;
+#if FACE_ROUND
+    float d = sdArcStroke<SQ>(dx, dy, 0, 1, ACC_COS, ACC_SIN, f.accRm, f.accHw);
+#else
+    float d = sdRoundBox<SQ>(dx, dy, f.accRm, f.accHw, f.accHw);
+#endif
+    float cov = clamp01(0.5f - d) * f.accK * ACC_ALPHA;
+    if (cov > 0) { cr += (f.accR - cr) * cov; cg += (f.accG - cg) * cov; cb += (f.accB - cb) * cov; }
+  }
   if (light > 0) {
     cr += (1 - cr) * light; cg += (1 - cg) * light; cb += (1 - cb) * light;
   } else if (light < 0) {
     float m = 1 + light;
     cr *= m; cg *= m; cb *= m;
   }
-  if (linkOn) {
+  if (on & ON_LINK) {
     float dx = x - LINK_X, dy = y - LINK_Y;
     float cov = clamp01(0.5f - (SQ(dx * dx + dy * dy) - LINK_R));
     if (cov > 0) { cr += (LINK_GREY - cr) * cov; cg += (LINK_GREY - cg) * cov; cb += (LINK_GREY - cb) * cov; }
@@ -856,8 +1035,11 @@ FACE_HOT uint16_t shadePixel(const Frame &f, float x, float y, float sx, float s
 inline uint16_t pixel(int ix, int iy, const Frame &f, bool linkDot) {
   float x = ix + 0.5f, y = iy + 0.5f, sx = x, sy = y, light = 0;
   if (f.nRipples) rippleAt<sqrtRef>(f, x, y, &sx, &sy, &light);
-  return shadePixel<sqrtRef>(f, x, y, sx, sy, light, 3, f.dots > 0.001f, f.markK > 0.001f, f.veinK > 0.001f,
-                            f.zK > 0.001f, f.battK > 0.001f, linkDot);
+  int on = (f.dots > 0.001f ? ON_DOTS : 0) | (f.markK > 0.001f ? ON_MARK : 0) | (f.veinK > 0.001f ? ON_VEIN : 0) |
+           (f.zK > 0.001f ? ON_Z : 0) | (f.battK > 0.001f ? ON_BATT : 0) | (linkDot ? ON_LINK : 0) |
+           (f.accK > 0.001f ? ON_ACC : 0) | (f.sparkK > 0.001f ? ON_SPARK : 0) | (f.earK > 0.001f ? ON_EARS : 0) |
+           (f.nConf ? ON_CONF : 0);
+  return shadePixel<sqrtRef>(f, x, y, sx, sy, light, 3, on);
 }
 
 // Fast path, what the sketch runs: pixels [x0, x1) of row iy into
@@ -872,9 +1054,13 @@ inline void renderRow(uint16_t *out, int x0, int x1, int iy, const Frame &f, boo
     if (f.nRipples) rippleAt<fsqrt>(f, x, y, &sx, &sy, &light);
     int mask = (inBox(f.eye[0].box, sx, sy) ? 1 : 0) | (inBox(f.eye[1].box, sx, sy) ? 2 : 0);
     bool linkOn = linkRow && ix >= LINK_BOX.x0 && ix < LINK_BOX.x1;
-    out[ix - x0] = shadePixel<fsqrt>(f, x, y, sx, sy, light, mask, inBox(f.dotsBox, sx, sy),
-                                     inBox(f.markBox, sx, sy), inBox(f.veinBox, sx, sy),
-                                     inBox(f.zsBox, sx, sy), inBox(f.battBox, sx, sy), linkOn);
+    int on = (inBox(f.dotsBox, sx, sy) ? ON_DOTS : 0) | (inBox(f.markBox, sx, sy) ? ON_MARK : 0) |
+             (inBox(f.veinBox, sx, sy) ? ON_VEIN : 0) | (inBox(f.zsBox, sx, sy) ? ON_Z : 0) |
+             (inBox(f.battBox, sx, sy) ? ON_BATT : 0) | (linkOn ? ON_LINK : 0) |
+             (inBox(f.accBox, x, y) ? ON_ACC : 0) | (inBox(f.sparkBox, sx, sy) ? ON_SPARK : 0) |
+             (inBox(f.earBox[0], sx, sy) || inBox(f.earBox[1], sx, sy) ? ON_EARS : 0) |
+             (f.nConf && inBox(f.confAll, x, y) ? ON_CONF : 0);
+    out[ix - x0] = shadePixel<fsqrt>(f, x, y, sx, sy, light, mask, on);
   }
 }
 
@@ -925,7 +1111,7 @@ inline const Shape &shapeOf(char st) {
     case 'Q': return SHAPE_QUESTION;
     case 'L': return SHAPE_LIMIT;
   }
-  return SHAPE_IDLE;
+  return SHAPE_IDLE;  // 'D' and 'U' (done, unread)
 }
 
 inline uint32_t transitionMs(char st) {
@@ -965,6 +1151,9 @@ class Engine {
       nWipes = 0;
       baseR = baseG = baseB = 0;
       prevEye[0] = prevEye[1] = prevDots = prevMark = prevVein = prevZs = prevBatt = Rect{0, 0, 0, 0};
+      prevSpark = prevAcc = prevEar[0] = prevEar[1] = Rect{0, 0, 0, 0};
+      for (int i = 0; i < MAX_CONFETTI; i++) prevConf[i] = Rect{0, 0, 0, 0};
+      lastAccSig = -1;
     }
     from = shown;
     t0 = now;
@@ -977,6 +1166,7 @@ class Engine {
       case 'T': addWipe(WIPE_CLOCK, 120, 120, 0.05f, 0.65f, true, 0.5f); break;
       case 'Q': addWipe(WIPE_RADIAL, BURST_X, BURST_Y, 0.12f, 0.58f, false, 0.55f); break;
       case 'L': addWipe(WIPE_DROP, 0, 0, 0.04f, 0.80f, true, 0.30f); break;
+      case 'U': addWipe(WIPE_RADIAL, SPARK_X, SPARK_Y, 0.05f, 0.70f, false, 0.4f); break;
       default:  addWipe(WIPE_RADIAL, 120, 120, 0.05f, 0.70f, false, 0.4f); break;
     }
   }
@@ -1024,6 +1214,59 @@ class Engine {
 
   // How asleep MAICA is, 0..1 (the sketch dims the backlight with it).
   float sleepiness() const { return smooth(sleepW); }
+  // How bored (or asleep), 0..1 (the sketch dims the backlight a little).
+  float boredom() const { return smooth(boredW); }
+
+  // The colour of the app this face shows, along the rim; off = none.
+  void setAccent(bool on, uint8_t r, uint8_t g, uint8_t b) {
+    if (on) { accR = r / 255.0f; accG = g / 255.0f; accB = b / 255.0f; }
+    accOn = on;
+  }
+
+  // A long task finished: confetti and a joyful hop. level 1 or 2 (bigger).
+  void cheer(int level, uint32_t now) {
+    level = level < 1 ? 1 : level > 2 ? 2 : level;
+    cheerAt = now | 1;
+    cheerMs = CHEER_MS[level];
+    nConf = level == 2 ? MAX_CONFETTI : 12;
+    for (int i = 0; i < nConf; i++) {
+      confX0[i] = 120 + (randf() - 0.5f) * 50;
+      confY0[i] = 205;
+      confVX[i] = (randf() - 0.5f) * 280;
+      confVY[i] = -(230 + randf() * 190);
+      confW[i] = (randf() - 0.5f) * 18;
+      confCol[i] = (uint8_t)(rand32() % 6);
+    }
+    wake(now);
+  }
+
+  void greet(uint32_t now) { greetAt = now | 1; wake(now); }    // the computer connected: hello!
+  void dizzy(uint32_t now) { dizzyAt = now | 1; wake(now); }    // shaken
+  void heard(bool ok, uint32_t now) { heardAt = now | 1; heardOk = ok; wake(now); }  // after push-to-talk
+
+  // Push-to-talk held: listening, with the voice level 0..1.
+  void setListening(bool on, float level, uint32_t now) {
+    if (on && !listening) wake(now);
+    listening = on;
+    listenLvl += (clamp01(level) - listenLvl) * 0.5f;
+  }
+
+  // A double-tap is a gesture, not two hits: take back the anger it added.
+  void forgiveTaps(int n) { angerPts = maxf(angerPts - n, 0); }
+
+  // Redraw everything next frame (after the screen was off).
+  void invalidate() { fullRedraw = true; }
+
+  // Whether anything is moving beyond the gentle idle motion -- the sketch
+  // draws faster while it is, and slower (saving battery) while it isn't.
+  bool animating() const {
+    if (moving || nWipes || flinching || greetAt || dizzyAt || heardAt || cheerAt || listening || listenK > 0)
+      return true;
+    for (int i = 0; i < MAX_RIPPLES; i++)
+      if (ripples[i].active) return true;
+    if (fabsf(accK - (accOn ? 1.0f : 0.0f)) > 0.001f) return true;
+    return fabsf(fallVX) + fabsf(fallVY) > 8;  // eyes still swinging after a tilt
+  }
 
   // Advance to time `now`; the result, including what to redraw, is in
   // frame(). Every frame must be drawn: the redraw regions are relative to
@@ -1072,12 +1315,62 @@ class Engine {
     float tremble = smooth((angerShown - 0.85f) / 0.15f);
     drawn.lx += 1.3f * tremble * sinf(now * 0.11f);
     drawn.ly += 0.8f * tremble * sinf(now * 0.17f + 1);
-    float open = minf(minf(blinkOpenness(now), p.lid), 1 - (1 - FLINCH_LID) * wince);
+
+    // Overlays: hello on connecting, dizzy after a shake, a nod (or a small
+    // head shake) after push-to-talk, a celebration's hops, and listening.
+    float dt = lastUpd ? clampf((int32_t)(now - lastUpd) / 1000.0f, 0, 0.1f) : 0;
+    lastUpd = now;
+    float lidCap = 1;
+    if (greetAt) {
+      float u = (float)(int32_t)(now - greetAt) / GREET_MS;
+      if (u >= 1) greetAt = 0;
+      else {
+        drawn.happy = maxf(drawn.happy, bump(u, 0.0f, 1.0f));
+        drawn.oy -= 10 * bump(u, 0.05f, 0.35f) + 6 * bump(u, 0.40f, 0.62f);
+        drawn.sy *= 1 + 0.06f * bump(u, 0.05f, 0.35f);
+      }
+    }
+    if (dizzyAt) {
+      float u = (float)(int32_t)(now - dizzyAt) / DIZZY_MS;
+      if (u >= 1) dizzyAt = 0;
+      else {
+        float k = 1 - smooth((u - 0.7f) / 0.3f), ang = TAU * 2.2f * u;
+        drawn.lx += 10 * k * cosf(ang);
+        drawn.ly += 7 * k * sinf(ang);
+        drawn.erot += 0.5f * k * sinf(ang * 0.5f);
+        drawn.tilt += 0.18f * k * sinf(ang * 0.7f);
+        lidCap = 1 - 0.35f * k;
+      }
+    }
+    if (heardAt) {
+      float u = (float)(int32_t)(now - heardAt) / HEARD_MS;
+      if (u >= 1) heardAt = 0;
+      else if (heardOk) {
+        drawn.oy += 7 * (bump(u, 0.0f, 0.45f) + bump(u, 0.5f, 0.95f));
+        drawn.happy = maxf(drawn.happy, 0.6f * bump(u, 0.0f, 1.0f));
+      } else {
+        drawn.lx += 9 * sinf(TAU * 2.5f * u) * (1 - u);
+      }
+    }
+    if (cheerAt) {
+      float u = (float)(int32_t)(now - cheerAt) / cheerMs;
+      if (u < 1) {
+        drawn.happy = maxf(drawn.happy, bump(u, 0.0f, 0.9f));
+        drawn.oy -= 12 * bump(u, 0.02f, 0.22f) + 8 * bump(u, 0.26f, 0.42f);
+      }
+    }
+    approach(&listenK, listening ? 1.0f : 0.0f, 0.2f, dt);
+    drawn.ly -= 6 * smooth(listenK);
+    drawn.sy *= 1 + 0.08f * smooth(listenK);
+    approach(&accK, accOn ? 1.0f : 0.0f, ACC_FADE_MS / 1000.0f, dt);
+
+    float open = minf(minf(minf(blinkOpenness(now), p.lid), 1 - (1 - FLINCH_LID) * wince), lidCap);
 
     float ph = TAU * (now % BREATH_MS) / BREATH_MS;
     fr.prepare(drawn, open, 1 + BREATH_SCALE * sinf(ph), -BREATH_FLOAT_PX * sinf(ph), now, view);
     fr.rippleW = RIPPLE_W * view.s;
     fr.rippleLutK = (RIPPLE_LUT - 1) / fr.rippleW;
+    prepareExtras(now);
 
     // What to redraw: each dark shape where it is now and where it was last
     // frame...
@@ -1095,6 +1388,22 @@ class Engine {
     prevZs = fr.zsBox;
     addRegion(unite(fr.battBox, prevBatt));
     prevBatt = fr.battBox;
+    addRegion(unite(fr.sparkBox, prevSpark));
+    prevSpark = fr.sparkBox;
+    for (int i = 0; i < 2; i++) { addRegion(unite(fr.earBox[i], prevEar[i])); prevEar[i] = fr.earBox[i]; }
+    // The rim only when it changes (wipes and ripples redraw it as they pass).
+    float accSig = accK + accR * 3 + accG * 5 + accB * 7;
+    if (accSig != lastAccSig || !view.same(lastAccView)) {
+      addRegion(unite(fr.accBox, prevAcc));
+      prevAcc = fr.accBox;
+      lastAccSig = accSig;
+      lastAccView = view;
+    }
+    for (int i = 0; i < MAX_CONFETTI; i++) {
+      Rect b = i < fr.nConf ? fr.confBox[i] : Rect{0, 0, 0, 0};
+      if (!b.empty() || !prevConf[i].empty()) addRegion(unite(b, prevConf[i]));
+      prevConf[i] = b;
+    }
 
     // ...and each wipe's band between its front last frame and now. A wipe
     // that has covered the screen becomes the base colour, and anything
@@ -1216,6 +1525,76 @@ class Engine {
   bool rippleLutReady = false, flinching = false;
   uint32_t flinchAt = 0;
 
+  // extras: the rim colour, overlays, listening, confetti
+  bool accOn = false;
+  float accR = 0, accG = 0, accB = 0, accK = 0, lastAccSig = -1;
+  View lastAccView = VIEW_FULL;
+  uint32_t lastUpd = 0, greetAt = 0, dizzyAt = 0, heardAt = 0, cheerAt = 0, cheerMs = 1;
+  bool heardOk = false, listening = false;
+  float listenK = 0, listenLvl = 0;
+  int nConf = 0;
+  float confX0[MAX_CONFETTI] = {}, confY0[MAX_CONFETTI] = {}, confVX[MAX_CONFETTI] = {}, confVY[MAX_CONFETTI] = {},
+        confW[MAX_CONFETTI] = {};
+  uint8_t confCol[MAX_CONFETTI] = {};
+  Rect prevSpark = {}, prevAcc = {}, prevEar[2] = {}, prevConf[MAX_CONFETTI] = {};
+
+  // The engine-driven parts of the frame: rim, listening arcs, confetti.
+  void prepareExtras(uint32_t now) {
+    const View &v = view;
+    fr.accK = accK;
+    fr.accR = accR; fr.accG = accG; fr.accB = accB;
+#if FACE_ROUND
+    fr.accCx = v.X(120); fr.accCy = v.Y(120);
+    fr.accRm = (ACC_R0 + ACC_R1) * 0.5f * v.s;
+    fr.accHw = (ACC_R1 - ACC_R0) * 0.5f * v.s;
+    float ax = (fr.accRm + fr.accHw) * ACC_SIN;
+    fr.accBox = accK > 0.001f ? boxAround(fr.accCx - ax, fr.accCy + (fr.accRm - fr.accHw) * ACC_COS - 1, fr.accCx + ax,
+                                          fr.accCy + fr.accRm + fr.accHw, 2)
+                              : Rect{0, 0, 0, 0};
+#else
+    fr.accCx = v.X(120); fr.accCy = v.Y((ACC_BAR_Y0 + ACC_BAR_Y1) * 0.5f);
+    fr.accRm = (ACC_BAR_X1 - ACC_BAR_X0) * 0.5f * v.s;
+    fr.accHw = (ACC_BAR_Y1 - ACC_BAR_Y0) * 0.5f * v.s;
+    fr.accBox = accK > 0.001f ? boxAround(fr.accCx - fr.accRm, fr.accCy - fr.accHw, fr.accCx + fr.accRm,
+                                          fr.accCy + fr.accHw, 2)
+                              : Rect{0, 0, 0, 0};
+#endif
+    fr.earK = smooth(listenK);
+    fr.earLvl = listenLvl;
+    fr.earX[0] = v.X(EAR_X); fr.earX[1] = v.X(240 - EAR_X); fr.earY = v.Y(EAR_Y);
+    fr.earS = v.s; fr.earInv = 1.0f / v.s;
+    float er = (EAR_R2 + EAR_HW + 1) * v.s;
+    for (int i = 0; i < 2; i++)
+      fr.earBox[i] = fr.earK > 0.001f ? boxAround(fr.earX[i] - er, fr.earY - er, fr.earX[i] + er, fr.earY + er, 2)
+                                      : Rect{0, 0, 0, 0};
+
+    fr.nConf = 0;
+    fr.confAll = Rect{0, 0, 0, 0};
+    if (cheerAt) {
+      float t = (float)(int32_t)(now - cheerAt) / 1000.0f, u = t * 1000.0f / cheerMs;
+      if (u >= 1) {
+        cheerAt = 0;
+        nConf = 0;
+      } else {
+        float fade = 1 - smooth((u - 0.72f) / 0.28f), m = 7 * v.s;
+        for (int i = 0; i < nConf; i++) {
+          Confetto &c = fr.conf[fr.nConf];
+          c.x = v.X(confX0[i] + confVX[i] * t);
+          c.y = v.Y(confY0[i] + confVY[i] * t + 0.5f * CONF_GRAVITY * t * t);
+          c.c = cosf(confW[i] * t); c.s = sinf(confW[i] * t);
+          c.r = CONF_COLORS[confCol[i]][0] / 255.0f;
+          c.g = CONF_COLORS[confCol[i]][1] / 255.0f;
+          c.b = CONF_COLORS[confCol[i]][2] / 255.0f;
+          c.a = fade * smooth(t / 0.08f);
+          Rect b = boxAround(c.x - m, c.y - m, c.x + m, c.y + m, 1);
+          if (b.empty()) continue;  // off the screen
+          fr.confBox[fr.nConf++] = b;
+          fr.confAll = unite(fr.confAll, b);
+        }
+      }
+    }
+  }
+
   // tilt: where it says the eyes should fall, and where they are / how fast
   float tiltX = 0, tiltY = 0;
   float fallX = 0, fallY = 0, fallVX = 0, fallVY = 0;
@@ -1288,7 +1667,7 @@ class Engine {
   void addWipe(uint8_t kind, float ox, float oy, float at, float len, bool inOut, float hl) {
     float r, g, b;
     if (state == 'D') idleColour(&r, &g, &b);
-    else { const Shape &s = shapeOf(state); r = s.r; g = s.g; b = s.b; }
+    else { int i = paletteIndex(state); r = palette().r[i]; g = palette().g[i]; b = palette().b[i]; }
     addWipeAt(kind, ox, oy, t0 + (uint32_t)(at * dur), (uint32_t)(len * dur), inOut, hl, r, g, b);
   }
 
@@ -1409,7 +1788,7 @@ class Engine {
   // The idle colour for the current mood and anger: green (duller when
   // bored, night blue when asleep), heading for red with anger.
   void idleColour(float *r, float *g, float *b) const {
-    float br = SHAPE_IDLE.r, bg = SHAPE_IDLE.g, bb = SHAPE_IDLE.b;
+    float br = palette().r[0], bg = palette().g[0], bb = palette().b[0];
     if (mood == BORED) { br = BORED_R; bg = BORED_G; bb = BORED_B; }
     if (mood == ASLEEP) { br = NIGHT_R; bg = NIGHT_G; bb = NIGHT_B; }
     mixRGB(br, bg, bb, ANGRY_R, ANGRY_G, ANGRY_B, clamp01((angerPts - 1) / (ANGER_FULL - 1)), r, g, b);
@@ -1452,11 +1831,11 @@ class Engine {
     // Bored, then asleep, while idle with nothing happening.
     if (state == 'D' && !moving) {
       uint32_t idle = now - lastActivity;
-      if (mood == AWAKE && idle >= FACE_BORED_AFTER_S * 1000UL) {
+      if (mood == AWAKE && idle >= tuning().boredAfterS * 1000UL) {
         mood = BORED;
         recolour(WIPE_RADIAL, 120, 120, now, 2500, true, 0.1f);
       }
-      if (mood == BORED && idle >= FACE_SLEEP_AFTER_S * 1000UL) {
+      if (mood == BORED && idle >= tuning().sleepAfterS * 1000UL) {
         mood = ASLEEP;
         recolour(WIPE_RADIAL, 120, -60, now, 4000, true, 0.0f);  // night falls from the top
       }
@@ -1511,7 +1890,8 @@ class Engine {
   Pose rest(uint32_t now) {
     const Shape &s = shapeOf(state);
     Pose p;
-    p.ew = s.ew; p.eh = s.eh; p.er = s.er; p.erot = s.erot;
+    const float es = tuning().eyeScale;
+    p.ew = s.ew * es; p.eh = s.eh * es; p.er = s.er * es; p.erot = s.erot;
     p.gap = s.gap; p.ey = s.ey; p.cx = s.cx; p.tilt = s.tilt;
     p.lx = p.ly = 0;
     p.sx = p.sy = 1;
@@ -1523,7 +1903,16 @@ class Engine {
     p.lidDrop = p.lidSlant = 0;
     p.vein = p.zs = 0;
     p.batt = 0; p.battPop = 1;
-    if (state == 'L') {
+    p.spark = 0;
+    if (state == 'U') {
+      // Done, unread: smiling eyes that keep glancing up at a twinkling star
+      // -- "something's waiting for you".
+      p.spark = 1;
+      p.happy = 0.45f;
+      float u = (float)(now % 4200) / 4200.0f, look = smooth(bump(u, 0.5f, 0.98f) * 1.5f);
+      p.lx = lerpf(-2, 12, look);
+      p.ly = lerpf(2, -8, look);
+    } else if (state == 'L') {
       // Out of tokens: low, droopy eyes looking down. Now and then they
       // glance up at the empty battery, then sigh -- sink, squash, droop.
       p.batt = 1;
@@ -1554,6 +1943,12 @@ class Engine {
       uint32_t u = now % SHAKE_PERIOD_MS;
       p.beat = u < SHAKE_MS ? sinf(3.14159265f * u / SHAKE_MS) : 0;
       p.shake = p.beat * sinf(TAU * (float)u / SHAKE_SWING_MS);
+      // Left waiting, it gets impatient: harder shakes, and the eyes bob as
+      // if tapping a foot.
+      float imp = smooth(((float)(int32_t)(now - t0) - IMPATIENT_AFTER_MS) / IMPATIENT_RAMP_MS);
+      p.shake *= 1 + 0.7f * imp;
+      p.beat *= 1 + 0.5f * imp;
+      p.ly -= 3.0f * imp * fabsf(sinf(TAU * (float)(now % 700) / 1400.0f));
     } else {
       idleGaze(now, &p.lx, &p.ly);
       // Bored: lids half down, eyes drifting slowly from side to side, low.
@@ -1588,7 +1983,7 @@ class Engine {
     p.sx = lerpf(tgt.sx, a.sx, settle); p.sy = lerpf(tgt.sy, a.sy, settle);
     p.ox = lerpf(tgt.ox, a.ox, settle); p.oy = lerpf(tgt.oy, a.oy, settle);
     p.lid = 1 + (a.lid - 1) * settle;
-    p.happy = a.happy * settle;
+    p.happy = lerpf(tgt.happy, a.happy, settle);
     p.lidDrop = lerpf(a.lidDrop, tgt.lidDrop, su);
     p.lidSlant = lerpf(a.lidSlant, tgt.lidSlant, su);
     p.zs = lerpf(a.zs, tgt.zs, su);
@@ -1600,6 +1995,7 @@ class Engine {
       p.lid = smooth((u - 0.45f) / 0.25f);      // ...and open as they land
       p.mark = tgt.mark; p.markPop = s;
       p.batt = tgt.batt; p.battPop = s;
+      p.spark = tgt.spark * smooth((u - 0.5f) / 0.3f);
       p.dots = tgt.dots * smooth((u - 0.5f) / 0.3f);
       return p;
     }
@@ -1608,6 +2004,8 @@ class Engine {
       p.mark = a.mark * (1 - away);
       p.markPop = a.markPop + 0.4f * away;
     }
+    if (state == 'U') p.spark = lerpf(a.spark, 1, smooth((u - 0.3f) / 0.4f));
+    else p.spark = a.spark * (1 - smooth(u / 0.4f));
     if (state != 'L') {                         // ...and so does the battery
       float away = smooth(u / 0.45f);
       p.batt = a.batt * (1 - away);
@@ -1724,6 +2122,7 @@ class Faces {
         new (&eng[other]) Engine();
         eng[other].seed(seedBase ^ (now * 2654435761u));
         eng[other].setView(rightView(240));
+        applyAccent(other, 1);  // a fresh engine: give it the right face's rim colour
         eng[other].setState(st[1], now, true);
         eng[main].setState(st[0], now, false);
         animate(SPLITTING, SPLIT_SEAM, SPLIT_MS, now);
@@ -1750,7 +2149,30 @@ class Faces {
   }
 
   float sleepiness() const { return mode == ONE ? eng[main].sleepiness() : 0; }
+  float boredom() const { return mode == ONE ? eng[main].boredom() : 0; }
   bool isSplit() const { return mode != ONE; }
+
+  // Rim colours: n = 0 none, 1 = the single face (or the left one), 2 = left
+  // and right. rgb[i] = {r, g, b}.
+  void setAccents(int n, const uint8_t rgb[][3]) {
+    accN = n < 0 ? 0 : n > 2 ? 2 : n;
+    for (int i = 0; i < accN; i++) memcpy(accRGB[i], rgb[i], 3);
+    applyAccent(main, 0);
+    applyAccent(1 - main, 1);
+  }
+  void cheer(int level, uint32_t now) {
+    eng[main].cheer(level, now);
+    if (mode != ONE) eng[1 - main].cheer(level, now);
+  }
+  void greet(uint32_t now) { eng[0].greet(now); eng[1].greet(now); }
+  void dizzy(uint32_t now) { eng[0].dizzy(now); eng[1].dizzy(now); }
+  void heard(bool ok, uint32_t now) { eng[main].heard(ok, now); }
+  void setListening(bool on, float level, uint32_t now) { eng[main].setListening(on, level, now); }
+  void forgiveTaps(int n) { eng[0].forgiveTaps(n); eng[1].forgiveTaps(n); }
+  void invalidate() { eng[0].invalidate(); eng[1].invalidate(); dividerShown = false; }
+  bool animating() const {
+    return mode == SPLITTING || mode == MERGING || eng[main].animating() || (mode != ONE && eng[1 - main].animating());
+  }
 
   // Advance to `now`. Then draw each face's regions with its own frame, and
   // paint the divider dark if it moved.
@@ -1812,6 +2234,13 @@ class Faces {
   uint32_t animAt = 0, animMs = 1, seedBase = 1;
 
   static bool busy(char st) { return st == 'A' || st == 'T' || st == 'Q'; }
+
+  int accN = 0;
+  uint8_t accRGB[2][3] = {};
+  void applyAccent(int engine, int face) {
+    bool on = accN > face;
+    eng[engine].setAccent(on, accRGB[face][0], accRGB[face][1], accRGB[face][2]);
+  }
 
   void animate(Mode m, int to, uint32_t ms, uint32_t now) {
     mode = m;

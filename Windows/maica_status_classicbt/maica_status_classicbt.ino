@@ -154,7 +154,7 @@
 // Which screen: 1 = Adafruit 1.28" 240x240 round GC9A01A (product 6178),
 // 0 = Adafruit 1.54" 240x240 square ST7789 (product 3787). Same EYESPI pins
 // and cable either way; the face's layout follows (FACE_ROUND).
-#define SCREEN_ROUND 1
+#define SCREEN_ROUND 0
 
 #include "BluetoothSerial.h"
 #include <SPI.h>
@@ -165,6 +165,7 @@
 #include <Adafruit_ST7789.h>
 #endif
 #include <Wire.h>
+#include <Preferences.h>
 
 // Moods: how long MAICA can sit idle with nothing happening before it gets
 // bored, and before it falls asleep (seconds). Set before maica_face.h.
@@ -194,7 +195,7 @@
 // with no arguments picks them up.
 
 #define TFT_ROTATION   0          // 0-3: change to match how the screen is mounted
-#define TFT_SPI_HZ     40000000   // drop to 20000000 if the image is garbled or speckled
+#define TFT_SPI_HZ     20000000   // drop to 20000000 if the image is garbled or speckled
 #define BACKLIGHT_DUTY 255        // 0 (off) - 255 (full)
 #define SLEEP_BACKLIGHT_DUTY 50   // while MAICA sleeps (eases down as it nods off)
 
@@ -236,6 +237,45 @@
 // Print the accelerometer and the tilt it gives 4 times a second (0 = off).
 #define TILT_DEBUG 1
 
+// Which board: 1 = the 2026-09-16 MAICA board; 2 = rev 2 (PDM mic and
+// push-to-talk, soft-latch power button). Rev-2-only features compile in
+// only with 2.
+#define BOARD_REV 1
+
+// Battery. The face is drawn FPS_ACTIVE times a second only while something
+// is animating (a change of status, a tap, confetti...); otherwise FPS_IDLE
+// (breathing and blinking still look smooth), FPS_ASLEEP once asleep, and not
+// at all once the screen is off. With CPU_SCALING the processor runs at
+// CPU_IDLE_MHZ while nothing animates (Classic Bluetooth needs at least 80).
+#define FPS_ACTIVE 30
+#define FPS_IDLE   20
+#define FPS_ASLEEP  8
+#define CPU_SCALING 1
+#define CPU_IDLE_MHZ 80
+#define CPU_ACTIVE_MHZ 240
+#define BORED_DIM 0.30f          // the backlight dims this much (fraction) as MAICA gets bored
+
+// Two taps this close together (ms) are a double-tap: the PC brings forward
+// the app that needs you.
+#define DOUBLE_TAP_MS 450
+// Shaking: SHAKE_COUNT readings at least SHAKE_G away from 1 g within
+// SHAKE_WINDOW_MS make MAICA dizzy.
+#define SHAKE_G 0.8f
+#define SHAKE_COUNT 7
+#define SHAKE_WINDOW_MS 1200
+
+#if BOARD_REV >= 2
+#define PIN_PWR_LATCH 19     // held high keeps the power on; low turns MAICA off
+#define PIN_PWR_SENSE 39     // low while the power button is held (through Q4)
+#define PIN_PTT       32     // push-to-talk, active low (10k pull-up on the board)
+#define MIC_CLK       25     // MSM261DCB002 PDM microphone
+#define MIC_DATA      33
+#define MIC_RIGHT_SLOT 0     // set to 1 if recordings come out silent (the mic's L/R strap picks the edge)
+#define MIC_RATE   16000
+#define POWER_HOLD_MS 2000   // hold the power button this long to turn off
+#define PTT_MAX_MS 30000     // longest push-to-talk recording
+#endif
+
 // RGB565 from 8-bit R, G, B (boot splash).
 #define RGB(r, g, b) (uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3))
 #define BLACK RGB(0, 0, 0)
@@ -269,6 +309,28 @@ int frameLen = -1;           // >= 0 while reading a frame
 char frameBuf[4];
 bool lastConnected = false;  // detects connect/disconnect edges in loop()
 
+// "{...}" frames from the PC (see handleFrame): the app's rim colour, a
+// celebration, settings, "heard" after push-to-talk.
+char cmdText[220];
+int cmdLen = -1;             // >= 0 while reading one
+
+// Settings (the PC's "{cfg:...}", kept in flash -- see applyConfig).
+Preferences prefs;
+String faceName = "MAICA";
+int brightnessPct = 100;
+uint32_t screenOffMin = 15, noComputerOffMin = 30;
+
+// Power: screen off after sleeping a while; CPU speed.
+bool screenOff = false;
+unsigned long asleepSince = 0, connectedLastAt = 0;
+int cpuMhz = CPU_ACTIVE_MHZ;
+unsigned long calmSince = 0;
+
+// Gestures.
+unsigned long lastTapAt = 0, lastDizzy = 0;
+unsigned long shakeTimes[SHAKE_COUNT] = {};
+int shakeIdx = 0;
+
 const char *stateName(char s) {
   switch (s) {
     case 'A': return "ANALYZING";
@@ -276,6 +338,7 @@ const char *stateName(char s) {
     case 'Q': return "QUESTION";
     case 'D': return "IDLE";
     case 'L': return "OUT OF TOKENS";
+    case 'U': return "DONE, UNREAD";
   }
   return "?";
 }
@@ -286,6 +349,7 @@ bool displayConnected = false;  // drives the face's "no computer" dot
 
 face::Faces faces;            // one face, or two side by side (see maica_face.h)
 uint16_t lineBuf[240];        // one row of pixels at a time -- no framebuffer
+int lastDuty = -1;            // backlight duty last written (-1: write it next frame)
 bool faceShown = false;       // false until the face first replaces the boot splash
 unsigned long lastFaceFrame = 0;
 
@@ -350,9 +414,11 @@ void faceFrame(unsigned long now) {
   statFrames++;
   if (now - statSince >= 30000UL) {
     if (statFrames > 0) {
-      Serial.printf("[face] %lu frames in %lus: %.1f ms/frame, %lu px/frame\n",
+      // Also the power picture: frames per second actually drawn, CPU speed,
+      // backlight (0-255) -- the levers for battery life.
+      Serial.printf("[face] %lu frames in %lus: %.1f ms/frame, %lu px/frame | %.1f fps, cpu %d MHz, backlight %d\n",
                     statFrames, (now - statSince) / 1000, statMicros / 1000.0f / statFrames,
-                    statPixels / statFrames);
+                    statPixels / statFrames, statFrames * 1000.0f / (now - statSince), cpuMhz, lastDuty);
     }
     statFrames = statMicros = statPixels = 0;
     statSince = now;
@@ -504,6 +570,21 @@ void tiltUpdate(unsigned long now) {
   tiltTracker.feed(s, dt);
   faces.setTilt(tiltTracker.x(), tiltTracker.y());
 
+  // Shaken: several readings far from 1 g in a short while -> dizzy. (A tap is
+  // a spike of one or two readings, so it never counts as a shake.)
+  float mag = sqrtf(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]);
+  if (fabsf(mag - 1.0f) > SHAKE_G) {
+    shakeTimes[shakeIdx] = now;
+    shakeIdx = (shakeIdx + 1) % SHAKE_COUNT;
+    unsigned long oldest = shakeTimes[shakeIdx];
+    if (oldest && now - oldest < SHAKE_WINDOW_MS && now - lastDizzy > 4000) {
+      lastDizzy = now;
+      faces.dizzy(now);
+      sendEvent("!shake\n");
+      Serial.println("[shake] dizzy!");
+    }
+  }
+
   uint8_t src;
   if (accelReadRegs(LIS_TAP_SRC, &src, 1) && (src & 0x40) && now - lastTap > 150) {  // TAP_IA (reading clears it)
     lastTap = now;
@@ -512,6 +593,17 @@ void tiltUpdate(unsigned long now) {
     Serial.printf("[tap] on the %s (chip %c%c)\n", side == 'T' ? "head" : side == 'B' ? "bottom" : side == 'L' ? "left"
                   : side == 'R' ? "right" : "face/back", (src & 0x04) ? 'X' : (src & 0x02) ? 'Y' : 'Z',
                   (src & 0x08) ? '-' : '+');
+    // Double-tap: a gesture, not two hits -- take back the anger, and tell
+    // the PC to bring forward the app that needs you.
+    if (lastTapAt && now - lastTapAt < DOUBLE_TAP_MS) {
+      lastTapAt = 0;
+      faces.forgiveTaps(2);
+      sendEvent("!dtap\n");
+      Serial.println("[tap] double-tap");
+    } else {
+      lastTapAt = now;
+    }
+    wakeScreen(now);
   }
 #if TILT_DEBUG
   static unsigned long lastPrint = 0;
@@ -527,7 +619,8 @@ void tiltUpdate(unsigned long now) {
 
 // -- Display layer -----------------------------------------------------------
 
-// Colour bars + name for ~1s at boot: confirms power, SPI, colour order (each
+
+// Name + colour bars for ~1s at boot: confirms power, SPI, colour order (each
 // bar should match its label) and orientation (text upright) at a glance.
 // On the round screen everything sits inside the circle.
 void drawSplash() {
@@ -541,12 +634,13 @@ void drawSplash() {
   tft.fillRect(bx + bw, by, bw, bh, RGB(0, 255, 0));
   tft.fillRect(bx + 2 * bw, by, bw, bh, RGB(0, 0, 255));
   tft.setTextColor(WHITE);
-  tft.setTextSize(5);
-  tft.setCursor(45, ty);            // 5 chars x 30px, centred
-  tft.print("MAICA");
+  int size = faceName.length() <= 7 ? 5 : 3;   // 30px or 18px per character
+  tft.setTextSize(size);
+  tft.setCursor((240 - (int)faceName.length() * 6 * size) / 2, ty);
+  tft.print(faceName);
   tft.setTextSize(2);
   tft.setCursor(48, 105);           // 12 chars x 12px = 144px, centred
-  tft.print("firmware v12");
+  tft.print("firmware v13");
   tft.setTextColor(BLACK);
   const char *names[3] = {"RED", "GRN", "BLU"};
   for (int i = 0; i < 3; i++) {     // 3 chars x 12px, centred in each bar
@@ -557,7 +651,7 @@ void drawSplash() {
 
 void displayBegin() {
   ledcAttach(TFT_LITE, 5000, 8);
-  ledcWrite(TFT_LITE, BACKLIGHT_DUTY);
+  ledcWrite(TFT_LITE, BACKLIGHT_DUTY * brightnessPct / 100);
 
 #if SCREEN_ROUND
   tft.begin(TFT_SPI_HZ);  // Adafruit 1.28" 240x240 round GC9A01A
@@ -585,20 +679,262 @@ void displayState(char state, bool connected) {
   showFace(state, millis());
 }
 
-// Called every loop pass, for animations.
+// CPU speed: full while anything animates, CPU_IDLE_MHZ after 2 s of calm.
+void setCpuFor(bool animating, unsigned long now) {
+#if CPU_SCALING
+  if (animating) {
+    calmSince = 0;
+    if (cpuMhz != CPU_ACTIVE_MHZ) { setCpuFrequencyMhz(CPU_ACTIVE_MHZ); cpuMhz = CPU_ACTIVE_MHZ; }
+  } else {
+    if (!calmSince) calmSince = now;
+    if (cpuMhz != CPU_IDLE_MHZ && now - calmSince > 2000) { setCpuFrequencyMhz(CPU_IDLE_MHZ); cpuMhz = CPU_IDLE_MHZ; }
+  }
+#else
+  (void)animating; (void)now;
+#endif
+}
+
+// Something happened (a status change, a tap, a button): screen back on.
+void wakeScreen(unsigned long now) {
+  asleepSince = 0;
+  if (!screenOff) return;
+  screenOff = false;
+  faces.invalidate();  // redraw everything
+  lastDuty = -1;
+  setCpuFor(true, now);
+  Serial.println("[power] screen on");
+}
+
+// Called every loop pass, for animations: draws at FPS_ACTIVE while something
+// moves, FPS_IDLE otherwise, FPS_ASLEEP asleep -- and switches the screen off
+// once MAICA has been asleep for screenOffMin minutes.
 void displayAnimate(char state, unsigned long now) {
   (void)state;  // the face engine already knows the state
-  if (now - lastFaceFrame >= 1000UL / FACE_FPS) {
+  float sleepy = faces.sleepiness();
+  if (sleepy > 0.98f) { if (!asleepSince) asleepSince = now; }
+  else asleepSince = 0;
+  if (!screenOff && screenOffMin && asleepSince && now - asleepSince > screenOffMin * 60000UL) {
+    screenOff = true;
+    ledcWrite(TFT_LITE, 0);
+    lastDuty = 0;
+    Serial.println("[power] screen off (asleep)");
+  }
+  if (screenOff) {
+    // Keep the moods ticking slowly, so being picked up still wakes it.
+    if (now - lastFaceFrame >= 200) { faces.update(now); lastFaceFrame = now; }
+    if (faces.sleepiness() < 0.9f) wakeScreen(now);
+    setCpuFor(false, now);
+    return;
+  }
+  bool anim = faces.animating();
+  setCpuFor(anim, now);
+  int fps = anim ? FPS_ACTIVE : sleepy > 0.5f ? FPS_ASLEEP : FPS_IDLE;
+  if (now - lastFaceFrame >= 1000UL / fps) {
     faceFrame(now);
-    // Dim the backlight as MAICA falls asleep; back up as it wakes.
-    static int lastDuty = BACKLIGHT_DUTY;
-    int duty = BACKLIGHT_DUTY - (int)((BACKLIGHT_DUTY - SLEEP_BACKLIGHT_DUTY) * faces.sleepiness() + 0.5f);
+    // Backlight: the user's brightness, a little dimmer when bored, down to
+    // SLEEP_BACKLIGHT_DUTY asleep.
+    float bright = BACKLIGHT_DUTY * brightnessPct / 100.0f;
+    float awake = bright * (1 - BORED_DIM * faces.boredom());
+    float asleep = SLEEP_BACKLIGHT_DUTY * brightnessPct / 100.0f;
+    int duty = (int)(awake + (asleep - awake) * sleepy + 0.5f);
     if (duty != lastDuty) {
       ledcWrite(TFT_LITE, duty);
       lastDuty = duty;
     }
   }
 }
+
+// -- Talking to the PC ---------------------------------------------------------
+
+// Board -> PC: one "!..." line per event (the PC watcher reads them; older
+// watchers ignore them).
+void sendEvent(const char *line) {
+  if (deviceConnected) SerialBT.print(line);
+}
+
+// Settings from the PC: "br=80;es=110;bo=5;sl=30;so=15;ao=30;nm=MAICA;
+// ci=28DC5A;ca=...;ct=...;cq=...;cl=..." -- brightness %, eye size %,
+// bored / asleep / screen-off / no-computer-off minutes, the name on the
+// boot screen, and the idle / analyzing / thinking / question / out-of-tokens
+// colours. Kept in flash, so they survive unplugging.
+void applyConfig(const char *cfg, bool save) {
+  char buf[220];
+  strncpy(buf, cfg, sizeof buf - 1);
+  buf[sizeof buf - 1] = 0;
+  for (char *tok = strtok(buf, ";"); tok; tok = strtok(NULL, ";")) {
+    char *eq = strchr(tok, '=');
+    if (!eq) continue;
+    *eq = 0;
+    const char *k = tok, *v = eq + 1;
+    long n = atol(v);
+    if (!strcmp(k, "br")) brightnessPct = constrain(n, 5, 100);
+    else if (!strcmp(k, "es")) face::tuning().eyeScale = constrain(n, 70, 130) / 100.0f;
+    else if (!strcmp(k, "bo")) face::tuning().boredAfterS = constrain(n, 1, 240) * 60;
+    else if (!strcmp(k, "sl")) face::tuning().sleepAfterS = constrain(n, 2, 600) * 60;
+    else if (!strcmp(k, "so")) screenOffMin = constrain(n, 0, 600);
+    else if (!strcmp(k, "ao")) noComputerOffMin = constrain(n, 0, 600);
+    else if (!strcmp(k, "nm") && *v) faceName = String(v).substring(0, 12);
+    else if (k[0] == 'c' && strlen(k) == 2 && strlen(v) == 6) {
+      uint32_t c = strtoul(v, NULL, 16);
+      char st = k[1] == 'i' ? 'D' : k[1] == 'a' ? 'A' : k[1] == 't' ? 'T' : k[1] == 'q' ? 'Q' : k[1] == 'l' ? 'L' : 0;
+      if (st) face::setStateColor(st, c >> 16, (c >> 8) & 0xFF, c & 0xFF);
+    }
+  }
+  if (save && prefs.getString("cfg", "") != cfg) prefs.putString("cfg", cfg);  // only when changed: spare the flash
+  lastDuty = -1;
+}
+
+// One "{name:arg}" frame from the PC.
+void handleFrame(char *t, unsigned long now) {
+  char *colon = strchr(t, ':');
+  const char *arg = colon ? colon + 1 : "";
+  if (colon) *colon = 0;
+  if (!strcmp(t, "app") || !strcmp(t, "apps")) {  // rim colours: "D97757" or "D97757,10A37F" or ""
+    uint8_t rgb[2][3];
+    int n = 0;
+    for (const char *p = arg; n < 2 && strlen(p) >= 6;) {
+      char hex[7];
+      memcpy(hex, p, 6);
+      hex[6] = 0;
+      uint32_t c = strtoul(hex, NULL, 16);
+      rgb[n][0] = c >> 16; rgb[n][1] = (c >> 8) & 0xFF; rgb[n][2] = c & 0xFF;
+      n++;
+      p += 6;
+      if (*p == ',') p++;
+    }
+    faces.setAccents(n, rgb);
+  } else if (!strcmp(t, "cheer")) {
+    wakeScreen(now);
+    faces.cheer(atoi(arg), now);
+  } else if (!strcmp(t, "cfg")) {
+    applyConfig(arg, true);
+  } else if (!strcmp(t, "heard")) {
+    faces.heard(arg[0] == '1', now);
+  }
+}
+
+// -- Rev 2: power button, push-to-talk, microphone ------------------------------
+
+#if BOARD_REV >= 2
+#include "driver/i2s_pdm.h"
+
+i2s_chan_handle_t micRx = nullptr;
+bool micOn = false;
+int16_t micBuf[512];
+
+// The PDM mic at 16 kHz with 128x decimation: a 2.048 MHz mic clock (the
+// MSM261DCB002 needs 1.1-4.8 MHz; the driver's default 64x would be 1.024).
+bool micStart() {
+  if (micOn) return true;
+  i2s_chan_config_t cc = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+  if (i2s_new_channel(&cc, NULL, &micRx) != ESP_OK) return false;
+  i2s_pdm_rx_config_t pc = {
+      .clk_cfg = I2S_PDM_RX_CLK_DEFAULT_CONFIG(MIC_RATE),
+      .slot_cfg = I2S_PDM_RX_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
+      .gpio_cfg = {.clk = (gpio_num_t)MIC_CLK, .din = (gpio_num_t)MIC_DATA, .invert_flags = {.clk_inv = false}},
+  };
+  pc.clk_cfg.dn_sample_mode = I2S_PDM_DSR_16S;
+  pc.slot_cfg.slot_mask = MIC_RIGHT_SLOT ? I2S_PDM_SLOT_RIGHT : I2S_PDM_SLOT_LEFT;
+  if (i2s_channel_init_pdm_rx_mode(micRx, &pc) != ESP_OK || i2s_channel_enable(micRx) != ESP_OK) {
+    i2s_del_channel(micRx);
+    micRx = nullptr;
+    return false;
+  }
+  micOn = true;
+  return true;
+}
+
+void micStop() {
+  if (micRx) {
+    i2s_channel_disable(micRx);
+    i2s_del_channel(micRx);
+    micRx = nullptr;
+  }
+  micOn = false;
+}
+
+// Turn off through the soft latch (fade out first). Plugged into USB the
+// board stays powered whatever the latch says -- then just switch the screen
+// off instead.
+void powerOff(const char *why) {
+  Serial.printf("[power] turning off (%s)\n", why);
+  sendEvent("!pwr:off\n");
+  for (int d = lastDuty > 0 ? lastDuty : 255; d >= 0; d -= 15) { ledcWrite(TFT_LITE, d); delay(20); }
+  ledcWrite(TFT_LITE, 0);
+  delay(50);
+  digitalWrite(PIN_PWR_LATCH, LOW);
+  delay(1500);
+  Serial.println("[power] still powered (USB): screen off instead");
+  digitalWrite(PIN_PWR_LATCH, HIGH);
+  screenOff = true;
+  lastDuty = 0;
+}
+
+// Hold the power button POWER_HOLD_MS to turn off. Only once it has been let
+// go since power-on (it's still held while switching on).
+bool pwrArmed = false;
+unsigned long pwrDownAt = 0;
+void powerButtonUpdate(unsigned long now) {
+  bool held = digitalRead(PIN_PWR_SENSE) == LOW;
+  if (!held) { pwrArmed = true; pwrDownAt = 0; return; }
+  if (screenOff) wakeScreen(now);
+  if (!pwrArmed) return;
+  if (!pwrDownAt) pwrDownAt = now;
+  if (now - pwrDownAt >= POWER_HOLD_MS) { pwrArmed = false; powerOff("button held"); }
+}
+
+// No computer for noComputerOffMin minutes: turn off (on USB, screen off).
+void autoOffUpdate(unsigned long now) {
+  if (noComputerOffMin && !deviceConnected && now - connectedLastAt > noComputerOffMin * 60000UL) {
+    connectedLastAt = now;
+    powerOff("no computer");
+  }
+}
+
+// Push-to-talk: while held, stream the mic to the PC ("!aud:<n>" + n bytes of
+// 16 kHz 16-bit mono), which types what you said into the app in front. The
+// face listens, the arcs beside its eyes following your voice.
+bool pttHeld = false;
+unsigned long pttAt = 0, pttChangedAt = 0;
+void pttEnd(unsigned long now) {
+  micStop();
+  sendEvent("!ptt:0\n");
+  faces.setListening(false, 0, now);
+}
+void pttUpdate(unsigned long now) {
+  bool pressed = digitalRead(PIN_PTT) == LOW;
+  if (pressed != pttHeld && now - pttChangedAt > 30) {  // debounced
+    pttChangedAt = now;
+    pttHeld = pressed;
+    if (pressed) {
+      wakeScreen(now);
+      if (micStart()) {
+        pttAt = now;
+        sendEvent("!ptt:1\n");
+        faces.setListening(true, 0, now);
+      } else {
+        Serial.println("[mic] couldn't start the microphone");
+        faces.heard(false, now);
+      }
+    } else if (micOn) {
+      pttEnd(now);
+    }
+  }
+  if (!micOn) return;
+  if (now - pttAt > PTT_MAX_MS) { pttEnd(now); return; }
+  size_t got = 0;
+  i2s_channel_read(micRx, micBuf, sizeof micBuf, &got, 0);
+  if (!got) return;
+  int n = got / 2;
+  float sum = 0;
+  for (int i = 0; i < n; i++) sum += (float)micBuf[i] * micBuf[i];
+  faces.setListening(true, sqrtf(sum / n) / 6000.0f, now);  // normal speech comes out near 1
+  if (deviceConnected) {
+    SerialBT.printf("!aud:%u\n", (unsigned)got);
+    SerialBT.write((const uint8_t *)micBuf, got);
+  }
+}
+#endif
 
 // -- Bluetooth ---------------------------------------------------------------
 
@@ -615,11 +951,24 @@ void btEventCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
 }
 
 void setup() {
+#if BOARD_REV >= 2
+  pinMode(PIN_PWR_LATCH, OUTPUT);
+  digitalWrite(PIN_PWR_LATCH, HIGH);  // first thing: keep the power on once the button is let go
+  pinMode(PIN_PWR_SENSE, INPUT);
+  pinMode(PIN_PTT, INPUT);
+#endif
   Serial.begin(115200);  // USB, status/debug output only -- commands come over Bluetooth
   delay(500);
-  Serial.println("\n=== MAICA status firmware v12 (Classic Bluetooth) ===");
-  Serial.printf("Chip: %s rev %d, %d cores @ %lu MHz\n",
-                ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores(), (unsigned long)ESP.getCpuFreqMHz());
+  Serial.println("\n=== MAICA status firmware v13 (Classic Bluetooth) ===");
+  Serial.printf("Chip: %s rev %d, %d cores @ %lu MHz, board rev %d\n", ESP.getChipModel(), ESP.getChipRevision(),
+                ESP.getChipCores(), (unsigned long)ESP.getCpuFreqMHz(), BOARD_REV);
+
+  prefs.begin("maica", false);
+  String cfg = prefs.getString("cfg", "");
+  if (cfg.length()) {
+    applyConfig(cfg.c_str(), false);
+    Serial.printf("Settings: %s\n", cfg.c_str());
+  }
 
   displayBegin();
   Serial.println(SCREEN_ROUND ? "Screen initialised (1.28\" round 240x240 GC9A01A on EYESPI)."
@@ -633,15 +982,30 @@ void setup() {
 
   Serial.printf("Bluetooth SPP started as '%s'. Pair it in Windows Bluetooth settings,\n", BT_DEVICE_NAME);
   Serial.println("then start the PC watcher with --classic-bt (the packaged app's default).");
+  connectedLastAt = millis();
 }
 
 void loop() {
   unsigned long now = millis();
 
   // Drain any pending command bytes. Re-sending the same state is harmless.
-  // "<..>" frames carry the split faces' statuses in lowercase.
+  // "<..>" frames carry the split faces' statuses in lowercase; "{...}"
+  // frames the extras (see handleFrame).
   while (SerialBT.available()) {
     char cmd = SerialBT.read();
+    if (cmdLen >= 0) {
+      if (cmd == '}') {
+        cmdText[cmdLen] = 0;
+        handleFrame(cmdText, now);
+        cmdLen = -1;
+      } else if (cmdLen < (int)sizeof(cmdText) - 1) {
+        cmdText[cmdLen++] = cmd;
+      } else {
+        cmdLen = -1;  // too long: not a frame after all
+      }
+      continue;
+    }
+    if (cmd == '{') { cmdLen = 0; continue; }
     if (cmd == '<') { frameLen = 0; continue; }
     if (frameLen >= 0) {
       if (cmd == '>') {
@@ -650,15 +1014,15 @@ void loop() {
         if (n != splitCount || n) splitChanged = true;
         splitCount = n;
         frameLen = -1;
-      } else if (frameLen < 4 && (cmd == 'a' || cmd == 't' || cmd == 'q' || cmd == 'd' || cmd == 'l')) {
+      } else if (frameLen < 4 && cmd && strchr("atqdlu", cmd)) {
         frameBuf[frameLen++] = cmd;
       } else {
         frameLen = -1;  // not a frame after all
       }
       continue;
     }
-    if (cmd == 'A' || cmd == 'T' || cmd == 'Q' || cmd == 'D' || cmd == 'L') {
-      currentState = cmd;  // out of tokens arrives as "DL": the last byte wins
+    if (cmd && strchr("ATQDLU", cmd)) {
+      currentState = cmd;  // out of tokens / unread arrive as "DL" / "DU": the last byte wins
     }
   }
 
@@ -670,8 +1034,13 @@ void loop() {
     lastConnected = connected;
     if (!connected) {
       disconnectedAt = now;
+    } else {
+      wakeScreen(now);
+      faces.greet(now);  // hello!
+      sendEvent("!hello:v13\n");
     }
   }
+  if (connected) connectedLastAt = now;
 
   if (!connected && (currentState != 'D' || splitCount) && (now - disconnectedAt > LINK_GRACE_MS)) {
     Serial.println("Disconnected past grace period -- reverting to idle.");
@@ -680,6 +1049,7 @@ void loop() {
   }
 
   if (currentState != lastState || linkChanged) {
+    wakeScreen(now);
     displayState(currentState, connected);
     lastState = currentState;
   }
@@ -692,7 +1062,12 @@ void loop() {
     faces.setSplit(splitCount, splitStates, millis());
   }
   tiltUpdate(millis());
+#if BOARD_REV >= 2
+  powerButtonUpdate(millis());
+  pttUpdate(millis());
+  autoOffUpdate(millis());
+#endif
   displayAnimate(currentState, millis());
 
-  delay(2);
+  delay(screenOff ? 20 : 2);
 }

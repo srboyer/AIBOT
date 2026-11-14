@@ -297,54 +297,121 @@ def run_setup():
     root.mainloop()
 
 
-# -- Firmware update ---------------------------------------------------------------
+# -- Firmware --------------------------------------------------------------------
 
 def run_firmware():
+    """Flash MAICA over USB: the bundled firmware, or -- running from source
+    with the Arduino IDE installed -- the sketch built fresh. If MAICA doesn't
+    switch into download mode by itself, it says which buttons to press and
+    the next Flash goes ahead without the reset (see firmware_update)."""
     import firmware_update as fw
-    root = _window("Update MAICA's firmware")
+    root = _window("Flash MAICA's firmware")
     f = ttk.Frame(root, padding=14)
     f.pack(fill="both", expand=True)
-    ttk.Label(f, text="Plug MAICA into this computer with a USB data cable, pick its port, and press Update. "
-                      "It takes about half a minute; don't unplug it meanwhile.",
-              wraplength=460, justify="left").pack(anchor="w")
-    row = ttk.Frame(f); row.pack(anchor="w", pady=8)
+    ttk.Label(f, text="Plug MAICA into this computer with a USB data cable, pick its port and press Flash. "
+                      "It takes under a minute; don't unplug it meanwhile. MAICA's Bluetooth pairing and "
+                      "settings are kept.", wraplength=480, justify="left").pack(anchor="w")
+
+    row = ttk.Frame(f); row.pack(anchor="w", pady=(10, 4))
+    ttk.Label(row, text="Port").pack(side="left", padx=(0, 6))
     port = tk.StringVar()
-    combo = ttk.Combobox(row, textvariable=port, width=46, state="readonly")
+    combo = ttk.Combobox(row, textvariable=port, width=44, state="readonly")
     combo.pack(side="left")
 
     def refresh():
         ports = fw.board_ports()
         combo.configure(values=[d for _, d in ports])
-        if ports:
+        # Only MAICA's own chip is picked for you; anything else, you choose.
+        if ports and "CP210x" in ports[0][1]:
             combo.current(0)
+        elif not ports:
+            port.set("")
 
     ttk.Button(row, text="Refresh", command=refresh).pack(side="left", padx=6)
-    image = fw.default_image()
-    ttk.Label(f, text=f"Firmware: {os.path.basename(image)}" + ("" if os.path.exists(image) else "  (missing!)")).pack(
-        anchor="w")
-    log = tk.Text(f, width=64, height=12, state="disabled")
+
+    can_build, have_bundled = fw.can_build(), fw.bundled_parts() is not None
+    source = tk.StringVar(value="build" if can_build else "bundled")
+    screen = tk.StringVar(value="round" if fw.sketch_screen_round() else "square")
+    src = ttk.Frame(f); src.pack(anchor="w", pady=4)
+    if can_build:
+        ttk.Radiobutton(src, text="Build the sketch (maica_status_classicbt) and flash it", value="build",
+                        variable=source).pack(anchor="w")
+        scr = ttk.Frame(src); scr.pack(anchor="w", padx=22)
+        ttk.Label(scr, text="Screen:").pack(side="left")
+        ttk.Radiobutton(scr, text="Square", value="square", variable=screen).pack(side="left", padx=4)
+        ttk.Radiobutton(scr, text="Round", value="round", variable=screen).pack(side="left", padx=4)
+    if have_bundled:
+        ttk.Radiobutton(src, text=f"The firmware that came with MAICA {VERSION}", value="bundled",
+                        variable=source).pack(anchor="w")
+    if not can_build and not have_bundled:
+        ttk.Label(src, text="No firmware found: this copy has none bundled, and the Arduino IDE isn't installed "
+                            "to build it.", foreground="#b00020", wraplength=480).pack(anchor="w")
+
+    in_download = tk.BooleanVar(value=False)
+    ttk.Checkbutton(f, text="MAICA is already in download mode (I held BOOT, tapped RESET, let go of BOOT)",
+                    variable=in_download).pack(anchor="w", pady=(6, 0))
+    hint = ttk.Label(f, text="", foreground="#b00020", wraplength=480, justify="left")
+    hint.pack(anchor="w", pady=(6, 0))
+
+    log = tk.Text(f, width=72, height=14, state="disabled")
     log.pack(fill="both", expand=True, pady=8)
     lines = queue.Queue()
+    built = {}  # (screen) -> parts, so a retry after the button press doesn't build again
 
     def pump():
         while not lines.empty():
+            item = lines.get()
+            if isinstance(item, tuple):  # ("done", result)
+                finish(item[1])
+                continue
             log.configure(state="normal")
-            log.insert("end", lines.get() + "\n")
+            log.insert("end", item + chr(10))
             log.see("end")
             log.configure(state="disabled")
         root.after(100, pump)
 
+    def finish(result):
+        btn.configure(state="normal")
+        if result == "ok":
+            hint.configure(text="Flashed. MAICA is restarting.", foreground="#1b7f3b")
+            in_download.set(False)
+        elif result == "needs-boot":
+            hint.configure(text=fw.BOOT_STEPS, foreground="#b00020")
+            in_download.set(True)  # the next press: no reset dance
+        elif result == "busy":
+            hint.configure(text=fw.BUSY_STEPS, foreground="#b00020")
+        elif result == "no-firmware":
+            hint.configure(text="Nothing to flash -- see the log.", foreground="#b00020")
+        else:
+            hint.configure(text="It didn't work -- see the log. Check the cable is a data cable.",
+                           foreground="#b00020")
+
     def go():
-        if not port.get():
-            return
         dev = port.get().split(" - ")[0]
+        if not dev:
+            hint.configure(text="Pick MAICA's port first (plugged in? press Refresh).", foreground="#b00020")
+            return
         btn.configure(state="disabled")
+        hint.configure(text="")
+        use_build, round_screen, reset = source.get() == "build", screen.get() == "round", not in_download.get()
+
         def work():
-            fw.flash(dev, image, log=lines.put)
-            root.after(0, lambda: btn.configure(state="normal"))
+            if use_build:
+                parts = built.get(round_screen) or fw.build(round_screen, log=lines.put)
+                if parts:
+                    built.clear()
+                    built[round_screen] = parts
+            else:
+                parts = fw.bundled_parts()
+            if not parts:
+                lines.put(("done", "no-firmware"))
+                return
+            lines.put(f"Flashing {dev}" + (" (already in download mode)" if not reset else "") + "...")
+            lines.put(("done", fw.flash(dev, parts, reset=reset, log=lines.put)))
+
         threading.Thread(target=work, daemon=True).start()
 
-    btn = ttk.Button(f, text="Update", command=go)
+    btn = ttk.Button(f, text="Flash", command=go)
     btn.pack(anchor="e")
     refresh()
     pump()

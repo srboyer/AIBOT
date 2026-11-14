@@ -9,10 +9,14 @@ colour of what MAICA is showing, and its menu has
     Settings...                 name, colours, brightness, timings, behaviour
     Set up MAICA...             the first-run guide (pairing, Claude Code,
                                 browser extension, Mac permissions)
-    Update MAICA's firmware...  over USB, no Arduino needed
+    Flash MAICA's firmware...   over USB, no Arduino IDE needed: the bundled
+                                firmware, or (running from source) built
+                                fresh from the sketch
     Check for updates
     Start at login
-    Open log / Quit
+    Open log
+    Restart MAICA               a fresh copy -- picks up changed code
+    Quit
 
 The first run opens the setup guide by itself. Only one copy runs at a time
 (the second finds the first's event server port taken and just opens the
@@ -112,7 +116,8 @@ class App:
                     print(f"[app] watcher error, restarting in 5s: {e}")
                     time.sleep(5)
 
-        threading.Thread(target=run, name="maica-watcher", daemon=True).start()
+        self.watcher = threading.Thread(target=run, name="maica-watcher", daemon=True)
+        self.watcher.start()
 
     def on_status(self, snap):
         self.status = snap
@@ -172,6 +177,30 @@ class App:
         if self.icon is not None:
             self.icon.stop()
 
+    def restart(self, *_):
+        """Start a fresh copy -- picking up changed code, rules or settings --
+        and leave. The watcher is stopped first so it closes the Bluetooth
+        link, and the event server so its port (the one-copy check) is free
+        for the new copy; then it starts, and this one goes."""
+        print("[app] restarting...")
+        self.stop.set()
+        event_server.hub.wake.set()
+        watcher = getattr(self, "watcher", None)
+        if watcher is not None:
+            watcher.join(timeout=4)
+        event_server.stop()
+        if getattr(sys, "frozen", False):
+            cmd, cwd = [sys.executable], None
+        else:
+            here = os.path.dirname(os.path.abspath(__file__))
+            cmd, cwd = [sys.executable, os.path.join(here, "maica_app.py")], here
+        # Same console (if there is one), so a terminal you started it from
+        # keeps showing the log.
+        subprocess.Popen(cmd, cwd=cwd)
+        threading.Timer(3.0, lambda: os._exit(0)).start()
+        if self.icon is not None:
+            self.icon.stop()
+
     def run(self):
         import pystray
         from pystray import Menu, MenuItem as Item
@@ -181,11 +210,12 @@ class App:
             Menu.SEPARATOR,
             Item("Settings...", lambda *_: _relaunch("--settings")),
             Item("Set up MAICA...", lambda *_: _relaunch("--setup")),
-            Item("Update MAICA's firmware...", lambda *_: _relaunch("--firmware")),
+            Item("Flash MAICA's firmware...", lambda *_: _relaunch("--firmware")),
             Item("Check for updates", self.check_updates),
             Item("Start at login", self.toggle_autostart, checked=lambda _: autostart.is_enabled()),
             Item("Open log", self.open_log),
             Menu.SEPARATOR,
+            Item("Restart MAICA", self.restart),
             Item(f"Quit MAICA {VERSION}", self.quit),
         )
         self.icon = pystray.Icon("MAICA", icon_image("idle"), "MAICA", menu)

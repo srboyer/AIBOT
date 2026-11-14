@@ -153,8 +153,12 @@
 
 // Which screen: 1 = Adafruit 1.28" 240x240 round GC9A01A (product 6178),
 // 0 = Adafruit 1.54" 240x240 square ST7789 (product 3787). Same EYESPI pins
-// and cable either way; the face's layout follows (FACE_ROUND).
+// and cable either way; the face's layout follows (FACE_ROUND). The desktop
+// app's "Flash MAICA's firmware..." window can override this per build
+// (-DSCREEN_ROUND=1); the Arduino IDE uses the value here.
+#ifndef SCREEN_ROUND
 #define SCREEN_ROUND 0
+#endif
 
 #include "BluetoothSerial.h"
 #include <SPI.h>

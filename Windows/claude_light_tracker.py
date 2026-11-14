@@ -285,7 +285,10 @@ class ArduinoLight(Light):
         import queue
         import threading
         import serial  # pyserial; imported here so this file still loads without it installed
-        self.ser = serial.Serial(port, baud, timeout=0.5)
+        # write_timeout: if the board stops taking data (a stalled Bluetooth
+        # link), a write raises instead of blocking forever -- the watcher
+        # drops the light and reconnects rather than freezing everything.
+        self.ser = serial.Serial(port, baud, timeout=0.5, write_timeout=3)
         # Arduino resets when the serial port opens; give the bootloader time
         # to finish before sending commands, or the first command gets dropped.
         time.sleep(2)

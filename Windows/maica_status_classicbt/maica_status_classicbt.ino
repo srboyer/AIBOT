@@ -250,7 +250,7 @@
 #define FPS_ACTIVE 30
 #define FPS_IDLE   20
 #define FPS_ASLEEP  8
-#define CPU_SCALING 1
+#define CPU_SCALING 0          // off: changing the CPU speed while Classic Bluetooth runs stalled the link
 #define CPU_IDLE_MHZ 80
 #define CPU_ACTIVE_MHZ 240
 #define BORED_DIM 0.30f          // the backlight dims this much (fraction) as MAICA gets bored

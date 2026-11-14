@@ -82,30 +82,39 @@ texts[:] = []
 w.next_scan = 0
 check("banner gone", w.check(lambda: root, busy=False), False)
 
-# --- Claude Code: StopFailure through the backend ----------------------------
+# --- Claude Code: per-session files, pushes, StopFailure -----------------------
 import claude_code_backend as ccb
+import event_server
 
 tmp = tempfile.mkdtemp()
+ccb.SESSIONS_DIR = os.path.join(tmp, "sessions")
 ccb.STATUS_FILE = os.path.join(tmp, "status.json")
-stamp = [time.time()]
+os.makedirs(ccb.SESSIONS_DIR)
+clock = [time.time() - 100]
 
 
-def hook(event, **fields):
-    """Write the status file the way the hook does, with a newer mtime."""
-    stamp[0] += 1
-    with open(ccb.STATUS_FILE, "w", encoding="utf-8") as f:
-        json.dump({"event": event, "host": "test", "written_at": time.time(), **fields}, f)
-    os.utime(ccb.STATUS_FILE, (stamp[0], stamp[0]))
+def hook(event, sid="s1", push=False, **fields):
+    """What the hook does: a status with a fresh written_at, to the session's
+    file (newer mtime) -- or pushed to the event server instead."""
+    clock[0] += 1
+    status = {"event": event, "host": "test", "session_id": sid, "written_at": clock[0], **fields}
+    if push:
+        event_server.hub.push_event("claude_code", status)
+        return status
+    path = os.path.join(ccb.SESSIONS_DIR, sid + ".json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(status, f)
+    os.utime(path, (clock[0], clock[0]))
+    return status
 
 
 later = (dt.datetime.now() + dt.timedelta(hours=2)).strftime("%I:%M%p").lstrip("0").lower()
-hook("SessionStart")
 b = ccb.ClaudeCodeBackend()
 check("connects", b.try_connect(), True)
 hook("UserPromptSubmit")
 r = b.poll()
 check("prompt -> analyzing, not limited", (r["prompt_sent"], r["limited"]), (True, False))
-hook("StopFailure", error="rate_limit", last_assistant_message=f"You've hit your 5-hour limit · resets {later}")
+hook("StopFailure", error="rate_limit", last_assistant_message=f"You've hit your 5-hour limit \u00b7 resets {later}")
 r = b.poll()
 check("StopFailure(limit) -> failed + limited", (r["failed"], r["finished"], r["limited"]), (True, False, True))
 check("reset time read", b.limited_until.strftime("%H:%M"),
@@ -121,22 +130,49 @@ hook("UserPromptSubmit"); b.poll()
 hook("StopFailure", error="overloaded", last_assistant_message="Overloaded")
 r = b.poll()
 check("other API error: failed, not limited", (r["failed"], r["limited"]), (True, False))
-
 hook("StopFailure", error="billing_error", last_assistant_message="Credit balance is too low")
-r = b.poll()
-check("billing_error -> limited (fallback hold)", r["limited"], True)
+check("billing_error -> limited (fallback hold)", b.poll()["limited"], True)
 b.limited_until = dt.datetime.now() - dt.timedelta(seconds=1)
 check("hold expires", b.poll()["limited"], False)
 
-# A limit still in force when the watcher starts is picked up.
-hook("StopFailure", error="rate_limit", last_assistant_message=f"You've hit your weekly limit · resets {later}")
+# Two sessions at once: the most active wins, and one finishing while the
+# other works is not "done".
+hook("UserPromptSubmit", sid="s1")
+check("s1 starts", b.poll()["prompt_sent"], True)
+hook("Notification", sid="s2", notification_type="permission_prompt")
+check("s2 asks -> question", b.poll()["question_started"], True)
+hook("PostToolUse", sid="s2", tool_name="AskUserQuestion")
+check("s2 answered -> back to working", b.poll()["answer_received"], True)
+hook("Stop", sid="s1")
+check("s1 done while s2 works: no DONE", b.poll()["finished"], False)
+hook("Stop", sid="s2")
+check("both done -> DONE", b.poll()["finished"], True)
+
+# Pushed events: handled at once, and the same event read again from the file
+# afterwards is not handled twice.
+s = hook("UserPromptSubmit", sid="s3", push=True)
+check("pushed prompt -> analyzing", b.poll()["prompt_sent"], True)
+with open(os.path.join(ccb.SESSIONS_DIR, "s3.json"), "w", encoding="utf-8") as f:
+    json.dump(s, f)
+check("same event from the file: ignored", any(b.poll()[k] for k in ("prompt_sent", "finished")), False)
+hook("PreToolUse", sid="s3", push=True)
+hook("PostToolUse", sid="s3", push=True)
+hook("Stop", sid="s3", push=True)
+r = b.poll()
+check("three quick pushes between polls: none lost", (r["finished"], b.tracker.level), (True, "idle"))
+hook("SessionEnd", sid="s3", push=True)
+b.poll()
+check("SessionEnd forgets the session", "s3" in b.sessions, False)
+
+# A limit still in force when the watcher starts is picked up...
+hook("StopFailure", sid="s4", error="rate_limit", last_assistant_message=f"You've hit your weekly limit \u00b7 resets {later}")
 b2 = ccb.ClaudeCodeBackend()
 b2.try_connect()
 check("limit picked up on connect", b2.poll()["limited"], True)
 # ...but not one that has already reset.
-past = (dt.datetime.now() - dt.timedelta(hours=1))
-with open(ccb.STATUS_FILE, "w", encoding="utf-8") as f:
-    json.dump({"event": "StopFailure", "error": "rate_limit", "written_at": (past - dt.timedelta(hours=6)).timestamp(),
+past = dt.datetime.now() - dt.timedelta(hours=7)
+with open(os.path.join(ccb.SESSIONS_DIR, "s4.json"), "w", encoding="utf-8") as f:
+    json.dump({"event": "StopFailure", "session_id": "s4", "error": "rate_limit", "written_at": past.timestamp(),
                "last_assistant_message": "You've hit your 5-hour limit"}, f)
 b3 = ccb.ClaudeCodeBackend()
 b3.try_connect()

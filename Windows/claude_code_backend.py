@@ -1,383 +1,233 @@
 """
 claude_code_backend.py
 
-ChatBackend implementation for Claude Code, the CLI/agent -- regardless of
-which editor or terminal it's running inside. This project is meant to work
-no matter which of those a given customer happens to use, so this backend
-deliberately does not gate on host: VS Code, JetBrains, Cursor, Windsurf, a
-bare terminal, or anything else that spawns `claude` are all tracked
-identically. See claude_code_status_hook.py's docstring for how the host is
-labeled (informational only, purely for printed/debug output) rather than
-used as a filter.
+ChatBackend for Claude Code, the CLI/agent -- whatever editor, terminal or
+app it runs in (VS Code, JetBrains, Cursor, the Claude desktop app's Code
+tab, a bare terminal...). No UI automation: Claude Code's own hooks run
+claude_code_status_hook.py on every event (registered in
+~/.claude/settings.json by claude_code_hook_installer.py), which
 
-Unlike every other backend here, this one does ZERO UI automation. Claude
-Code is a CLI/agent, not a windowed app with buttons to inspect -- there's
-nothing for pywinauto to grab onto (an integrated terminal is one opaque
-scrolling text buffer, not structured elements). Instead, detection rides
-on Claude Code's own hook system: claude_code_status_hook.py is registered
-in ~/.claude/settings.json against SessionStart, SessionEnd,
-UserPromptSubmit, PreToolUse, PostToolUse, Notification, and Stop, and
-overwrites a small status file (claude_code_status_shared.STATUS_FILE)
-every time one of those fires. This backend just polls that file -- no
-window handle, no reconnect-by-UIA, none of the usual fragility.
+  - pushes the event to the running watcher (event_server.py) -- the face
+    reacts within milliseconds, and no event is lost however fast they come;
+  - writes it to the session's own file in SESSIONS_DIR, which this backend
+    reads on startup and as a fallback if a push was missed.
 
-SETUP REQUIRED -- this backend does nothing until the hooks are actually
-registered. See claude_code_status_hook.py's docstring for the exact
-~/.claude/settings.json shape. Until then, try_connect() simply never
-succeeds (same as any other backend whose target app isn't running) --
-chat_watcher.py handles that as normal "waiting for app", not an error.
+SESSIONS -- every Claude Code session is tracked separately (it used to be
+one shared status file, so two sessions overwrote each other) and they're
+combined, the most active winning: one session asking you something shows
+QUESTION even while another is working.
 
-STATE MAPPING -- Claude Code's hook events map onto this project's four
-states as follows:
-    UserPromptSubmit -> prompt_sent            (ANALYZING)
-    PreToolUse        -> thinking_started       (THINKING -- "actively
-                         working", the closest available proxy; see caveat
-                         below)
-    PostToolUse        -> thinking_ended         (back to ANALYZING -- the
-                         tool call is over, whether it succeeded, errored,
-                         or was rejected/cancelled)
-    Notification      -> question_started       (QUESTION -- but only for
-                         notification_type != "idle_prompt"; see caveat
-                         below)
-    Notification "idle_prompt" while a turn is in progress
-                      -> finished               (DONE -- Claude Code is
-                         waiting for your input, so the turn is over even
-                         though no Stop fired; see INTERRUPTED/REJECTED
-                         TURNS below)
-    Stop               -> finished               (DONE)
-    StopFailure        -> failed                 (straight to idle, no DONE
-                         flash -- an API error ended the turn; Claude Code
-                         fires it INSTEAD of Stop), plus limited when the
-                         error means the usage limit is used up (OUT OF
-                         TOKENS -- see below)
-    SessionStart/SessionEnd -> connection lifecycle only, no state of their
-                         own (see check_alive via SessionEnd below)
+STATE MAPPING, per session (hook event -> level):
+    UserPromptSubmit           running     (ANALYZING)
+    PreToolUse                 thinking    (a tool call in flight -- the
+                               closest available proxy for "working hard";
+                               hooks don't fire around plain reasoning)
+    PostToolUse                running     (the tool call is over, whether it
+                               succeeded, errored or was rejected -- so a
+                               rejected tool self-heals instead of sticking)
+    Notification               question    (QUESTION) -- except
+                               notification_type "idle_prompt", the "still
+                               waiting on you" nudge after ~60s idle, which is
+                               NOT a question: mid-turn it means the turn
+                               ended without a Stop (Escape mid-reply), so ->
+                               idle (DONE)
+    Stop                       idle        (DONE)
+    StopFailure                idle, no DONE flash -- an API error ended the
+                               turn (Claude Code fires it INSTEAD of Stop);
+                               plus OUT OF TOKENS when the error means the
+                               usage limit ran out (see below)
+    SessionEnd                 the session is gone
+
+QUESTION -> answered: no hook says "permission granted", so a question holds
+until real progress (UserPromptSubmit / PreToolUse) or the AskUserQuestion
+tool's own PostToolUse (that IS the answer arriving), or a Stop ends the turn.
+
+STALE: a session busy with no event for STALE_AFTER_SECONDS (30 min -- far
+longer than any real silent stretch; Bash tool calls cap at 10) is assumed
+dead and goes idle. (A blind 90s timer used to cut genuine long tool calls
+short.)
 
 OUT OF TOKENS -- a StopFailure whose error is "rate_limit" (a plan's 5-hour
 or weekly limit; Claude Code retries plain throttling itself) or
-"billing_error" (an API key out of credit) puts this app in LIMIT (see
-usage_limit.is_limit_error). It lasts until the reset time in Claude Code's
-message ("You've hit your 5-hour limit · resets 3pm"), or
-usage_limit.FALLBACK_HOLD if there's none, and ends early the moment a turn
-gets through (a tool call or a normal Stop). A limit still in force when
-the watcher connects is picked up from the status file.
-
-CAVEAT -- no true THINKING signal: hooks only fire around tool calls, not
-around plain-text reasoning between them. So THINKING here really means
-"a tool call is in flight", not "extended thinking" in the Claude Desktop
-sense. Pure reasoning/response-writing with no tool calls reports nothing
-at all until the next hook fires, same as every other backend's honest
-gaps (see chatgpt_desktop_backend.py's own THINKING caveat).
-
-CAVEAT -- Notification is two very different events sharing one hook: its
-payload's notification_type field is "idle_prompt" ("Claude is waiting for
-your input") after ~60s of no activity -- NOT a real question, just a
-nudge -- versus something like "agent_needs_input" for an actual
-tool-permission prompt. These used to be conflated (every Notification ->
-QUESTION), which was a real, observed bug: simply going idle for a minute
-(e.g. reading a long response) turned the light red on its own with nothing
-actually pending, and it stayed red into the start of the next prompt.
-Fixed by excluding notification_type == "idle_prompt" specifically; any
-OTHER value, including one this project hasn't seen yet, still maps to
-QUESTION -- an unrecognized type is treated as "might genuinely need you",
-not the reverse.
-
-CAVEAT -- single session only: the status file holds exactly one session's
-latest event, last-writer-wins. Multiple concurrent Claude Code sessions
-(two editor panels, a panel plus a terminal session, or two different
-hosts at once) will stomp on each other here, same limitation every other
-backend in this project has with multiple windows of the same app.
-
-QUESTION -> answer received: there's no dedicated "permission granted" hook
-event, so (mirroring claude_desktop_backend.py's own awaiting_answer hold)
-this holds in QUESTION until either the NEXT UserPromptSubmit or PreToolUse
-shows real progress resumed (-> answer_received), OR a Stop shows the turn
-ended without one (-> finished directly, skipping answer_received -- there
-was no "resumed" moment to report). Both clear the hold; only
-UserPromptSubmit/PreToolUse used to, which left a Stop arriving mid-hold
-silently swallowed and the light stuck on QUESTION indefinitely (observed
-live -- a Notification doesn't guarantee a matching UserPromptSubmit/
-PreToolUse ever follows).
-
-A multiple-choice question (the AskUserQuestion tool) also clears the hold
-the moment it's answered: its own PostToolUse is the answer arriving. Seen
-in a real session's hook history: PreToolUse(AskUserQuestion), then
-Notification(permission_prompt) as the question appears, then
-PostToolUse(AskUserQuestion) when answered -- and waiting for the NEXT
-PreToolUse after that kept the light red several seconds past the answer.
-Only that tool's PostToolUse counts: with tools running in parallel, some
-other tool finishing says nothing about a permission prompt still pending.
-
-INTERRUPTED/REJECTED TURNS -- Claude Code has no hook event for "the user
-hit Escape" or "the user rejected this tool call" specifically; when a turn
-ends that way, NO hook fires at all telling us it's over (confirmed by
-watching a real session's status file: the last recorded event stayed
-"PreToolUse" indefinitely after a tool rejection -- no Stop ever followed).
-Two mitigations, in order of how much they cover:
-  1. PostToolUse very likely still fires for a rejected/errored/cancelled
-     tool call (not just a successful one), so most interruptions-with-a-
-     tool-in-flight self-heal back to ANALYZING immediately via the mapping
-     above -- no timeout needed for that case.
-  2. The one gap PostToolUse can't cover is interrupting Claude mid plain-
-     text response with NO tool involved at all -- genuinely zero hook
-     fires there. What DOES follow is Claude Code's own idle nudge: once
-     the prompt input has sat idle for ~60s it fires Notification with
-     notification_type "idle_prompt" ("Claude is waiting for your
-     input"). That only happens once Claude is actually waiting on you,
-     so poll() treats an idle_prompt arriving while busy as the turn's
-     end (-> finished). Like the old timer it replaced, it deliberately
-     does NOT apply while awaiting_answer (QUESTION): sitting on a
-     permission prompt is normal, not finished.
-
-  This used to be a blind 90s staleness timer -- "busy and no hook event
-  for 90s -> assume finished". That was a real, observed bug: hooks also go
-  silent during perfectly normal long work (a tool call running over 90s,
-  e.g. a firmware compile, or a long response with no tool calls), so the
-  light dropped to DONE mid-turn at ~1m40s while Claude was still working.
-  idle_prompt can't misfire that way. A timer remains only as a last-resort
-  safety net (STALE_AFTER_SECONDS, now 30 minutes) for a session that dies
-  without firing anything at all -- far longer than any real silent stretch
-  (Claude Code's own Bash tool caps at 10 minutes).
+"billing_error" (an API key out of credit) puts Claude Code in LIMIT (see
+usage_limit.is_limit_error). The limit is the account's, not the session's:
+it lasts until the reset time in Claude Code's message ("You've hit your
+5-hour limit · resets 3pm"), or usage_limit.FALLBACK_HOLD if there's none,
+and ends early the moment any session gets through (a tool call or a normal
+Stop). A limit still in force when the watcher starts is picked up from the
+session files.
 """
 
 import datetime
 import json
 import os
-import sys
 import time
 
+import event_server
 from chat_backend import ChatBackend
-from claude_code_status_shared import STATUS_FILE
+from claude_code_status_shared import SESSIONS_DIR, STATUS_FILE
+from level_tracker import LevelTracker, combine
 from usage_limit import FALLBACK_HOLD, is_limit_error, parse_reset
 
-EMPTY_RESULT = {
-    "prompt_sent": False,
-    "question_started": False,
-    "answer_received": False,
-    "thinking_started": False,
-    "thinking_ended": False,
-    "finished": False,
+STALE_AFTER_SECONDS = 30 * 60.0
+QUESTION_TOOL = "AskUserQuestion"   # its PostToolUse means you've answered
+PRUNE_ENDED_AFTER = 60.0            # forget a SessionEnd'ed session's file after this (seconds)
+PRUNE_ANY_AFTER = 2 * 24 * 3600.0   # ...and any session file this old
+
+# Where a session's host lives, for "done, unread" and tap-to-jump.
+HOST_TARGETS = {
+    "claude-desktop": {"title": "^Claude$", "process": "Claude.exe", "mac_app": "Claude"},
+    "claude-vscode": {"process": "Code.exe", "mac_app": "Code"},
+    "vscode": {"process": "Code.exe", "mac_app": "Code"},
+    "cursor": {"process": "Cursor.exe", "mac_app": "Cursor"},
+    "windsurf": {"process": "Windsurf.exe", "mac_app": "Windsurf"},
+    "jetbrains": {"title": "IntelliJ|PyCharm|WebStorm|GoLand|Rider|CLion|PhpStorm|RubyMine"},
+    "Apple_Terminal": {"mac_app": "Terminal"},
+    "iTerm.app": {"mac_app": "iTerm2"},
+    "WezTerm": {"process": "wezterm-gui.exe", "mac_app": "WezTerm"},
 }
 
-# See "INTERRUPTED/REJECTED TURNS" above. Silent turns normally end via the
-# idle_prompt notification; this is only the safety net for a session that
-# dies without firing anything at all. It must be far longer than any real
-# silent stretch -- at 90s it cut genuine long tool calls short.
-STALE_AFTER_SECONDS = 30 * 60.0
 
-# Claude Code's multiple-choice question tool. Its PostToolUse means you've
-# answered (see "QUESTION -> answer received" above).
-QUESTION_TOOL = "AskUserQuestion"
+class _Session:
+    def __init__(self, sid):
+        self.sid = sid
+        self.level = "idle"
+        self.awaiting_answer = False
+        self.last_event_at = time.time()
+        self.last_seq = 0.0          # written_at of the last event handled (dedupes push vs file)
+        self.ended = None            # "finished" / "failed" since the last poll
+        self.gone = False
+        self.host = None
+
+    def handle(self, status, backend):
+        seq = status.get("written_at") or 0.0
+        if seq and seq <= self.last_seq:
+            return  # already seen (it came both pushed and from the file)
+        self.last_seq = seq or self.last_seq
+        self.last_event_at = time.time()
+        self.host = status.get("host") or self.host
+        event = status.get("event")
+        busy = self.level != "idle"
+
+        if event == "SessionEnd":
+            if busy:
+                self.ended = "failed"
+            self.level, self.awaiting_answer, self.gone = "idle", False, True
+            return
+        if event == "StopFailure":
+            if busy:
+                self.ended = "failed"
+            self.level, self.awaiting_answer = "idle", False
+            backend.note_failure(status)
+            return
+        if event in ("PreToolUse", "PostToolUse", "Stop"):
+            backend.clear_limit()  # the API answered
+
+        if self.awaiting_answer:
+            if event in ("UserPromptSubmit", "PreToolUse") or (
+                    event == "PostToolUse" and status.get("tool_name") == QUESTION_TOOL):
+                self.awaiting_answer = False
+                self.level = "thinking" if event == "PreToolUse" else "running"
+            elif event == "Stop":
+                self.awaiting_answer = False
+                self.level, self.ended = "idle", "finished"
+            return
+
+        if event == "UserPromptSubmit":
+            self.level = "running"
+        elif event == "PreToolUse":
+            self.level = "thinking"
+        elif event == "PostToolUse":
+            self.level = "running"
+        elif event == "Notification":
+            if status.get("notification_type") != "idle_prompt":
+                self.level, self.awaiting_answer = "question", True
+            elif busy:
+                self.level, self.ended = "idle", "finished"
+        elif event == "Stop":
+            if busy:
+                self.ended = "finished"
+            self.level = "idle"
 
 
 class ClaudeCodeBackend(ChatBackend):
     name = "claude_code"
+    app_id = "claude_code"
 
     def __init__(self):
-        self.last_mtime = 0.0
-        self.awaiting_answer = False
-        # True from the moment a turn presumably starts (prompt_sent /
-        # thinking_started / question_started) until we see it end
-        # (finished, or the staleness fallback below fires). Purely local
-        # bookkeeping -- mirrors, but is independent of, chat_watcher.py's
-        # own State on the other side of the interface.
-        self.busy = False
-        self.last_event_at = time.monotonic()
-        self.host = None  # informational only -- see module docstring
-        # Out of tokens (see OUT OF TOKENS above): until when, local time.
+        self.sessions = {}
+        self.mtimes = {}
+        self.tracker = LevelTracker()
         self.limited = False
         self.limited_until = None
 
     # -- ChatBackend interface --------------------------------------------
 
     def try_connect(self) -> bool:
-        status = self._read_status()
-        if status is None:
+        if not (os.path.isdir(SESSIONS_DIR) or os.path.exists(STATUS_FILE)):
             return False
-        # A SessionEnd sitting as the latest event means the session that
-        # wrote it has already closed -- don't "connect" to a corpse just
-        # because its last status file write is still lying around.
-        if status.get("event") == "SessionEnd":
-            return False
-        # Baseline to the file's CURRENT mtime, not 0 -- otherwise the very
-        # next poll() would replay whatever event is already sitting in the
-        # file (e.g. a stale "Stop" from a moment ago) as if it just
-        # happened, same landmine the other backends avoid via
-        # _reset_poll_state() on connect.
-        self.last_mtime = self._mtime()
-        self.awaiting_answer = False
-        self.busy = False
-        self.last_event_at = time.monotonic()
-        self.host = status.get("host")
-        # Unlike a turn, a usage limit outlives the moment it was reported:
-        # if the last thing that happened was hitting it, it may well still
-        # be in force.
-        self.limited = False
-        self.limited_until = None
-        if status.get("event") == "StopFailure":
-            self._note_failure(status)
+        self.sessions, self.mtimes = {}, {}
+        self.limited, self.limited_until = False, None
+        event_server.hub.take_events("claude_code")  # pushes from before we were watching
+        for sid, status, mtime, path in self._read_files():
+            s = self.sessions.setdefault(sid, _Session(sid))
+            self.mtimes[path] = mtime
+            # History, not news: a turn that was going (recent progress event)
+            # is live; a question already waiting is not ours to announce; a
+            # recent StopFailure may mean a limit still in force.
+            s.last_seq = status.get("written_at") or 0.0
+            s.host = status.get("host")
+            age = time.time() - (status.get("written_at") or 0)
+            if status.get("event") in ("UserPromptSubmit", "PreToolUse", "PostToolUse") and age < STALE_AFTER_SECONDS:
+                s.level = "running"
+            if status.get("event") == "StopFailure":
+                self.note_failure(status)
+        self.tracker = LevelTracker()
+        self.tracker.baseline(combine(s.level for s in self.sessions.values()))
         return True
 
     def connect(self):
-        attempt = 0
         while not self.try_connect():
-            attempt += 1
-            if attempt == 1 or attempt % 12 == 0:
-                print("Waiting for Claude Code to be running somewhere "
-                      "(hooks configured? see claude_code_status_hook.py's "
-                      "docstring)...", file=sys.stderr)
             time.sleep(5)
-        print(f"Watching Claude Code (host: {self.host}; hook-driven, no UI automation).")
 
     def check_alive(self):
-        # No persistent window/handle here to go stale -- liveness is
-        # entirely poll()'s job (it raises the moment it sees a SessionEnd
-        # event), so there's nothing for this to check on its own.
         pass
 
     def poll(self, debug: bool = False) -> dict:
-        result = self._poll_events(debug=debug)
+        # Pushed events first (complete and in order), then any file that
+        # changed without a push (the watcher was busy or restarting).
+        for status in event_server.hub.take_events("claude_code"):
+            self._session(status).handle(status, self)
+        for sid, status, mtime, path in self._read_files(changed_only=True):
+            self.mtimes[path] = mtime
+            self._session(status).handle(status, self)
+
+        failed = finished = False
+        now = time.time()
+        for sid, s in list(self.sessions.items()):
+            if s.level != "idle" and not s.awaiting_answer and now - s.last_event_at > STALE_AFTER_SECONDS:
+                s.level, s.ended = "idle", "finished"
+            failed |= s.ended == "failed"
+            finished |= s.ended == "finished"
+            s.ended = None
+            if s.gone:
+                del self.sessions[sid]
+
         if self.limited and self.limited_until is not None and datetime.datetime.now() >= self.limited_until:
-            if debug:
-                print(f"[debug] claude_code: usage limit reset time {self.limited_until:%H:%M} passed")
-            self.limited = False
-            self.limited_until = None
+            self.clear_limit()
+        level = combine(s.level for s in self.sessions.values())
+        result = self.tracker.feed(level, failed=failed and not finished)
         result["limited"] = self.limited
-        return result
-
-    def _poll_events(self, debug: bool = False) -> dict:
-        result = dict(EMPTY_RESULT)
-
-        mtime = self._mtime()
-        if mtime <= self.last_mtime:
-            # No new hook event this tick. Silent turns normally end via
-            # idle_prompt (below); this is only the safety net for a
-            # session that died without firing anything -- see
-            # STALE_AFTER_SECONDS. Skipped while awaiting_answer: sitting on
-            # a permission prompt is normal, not stuck.
-            if (self.busy and not self.awaiting_answer
-                    and (time.monotonic() - self.last_event_at) > STALE_AFTER_SECONDS):
-                if debug:
-                    print(f"[debug] claude_code: no event for "
-                          f">{STALE_AFTER_SECONDS:.0f}s while busy -- assuming "
-                          f"the session died -> DONE")
-                result["finished"] = True
-                self.busy = False
-            return result
-
-        self.last_mtime = mtime
-        self.last_event_at = time.monotonic()
-
-        status = self._read_status()
-        if status is None:
-            return result  # file vanished mid-read
-
-        self.host = status.get("host")
-        event = status.get("event")
         if debug:
-            print(f"[debug] claude_code: event={event!r} "
-                  f"host={self.host!r} "
-                  f"session={status.get('session_id')!r} "
-                  f"awaiting_answer={self.awaiting_answer}")
-
-        if event == "SessionEnd":
-            raise RuntimeError(
-                "Claude Code session ended -- SessionEnd hook fired. "
-                "Restarting watcher to look for the next session."
-            )
-
-        if event == "StopFailure":
-            # An API error ended the turn -- Claude Code fires this INSTEAD
-            # of Stop, so it's the turn's end, question or not. Back to idle
-            # without a "done" flash; out of tokens if that's what it was.
-            if debug:
-                print(f"[debug] claude_code: StopFailure error={status.get('error')!r}")
-            result["failed"] = True
-            self.awaiting_answer = False
-            self.busy = False
-            self._note_failure(status)
-            return result
-
-        # The API answered: a tool call or a normal end of turn means any
-        # usage limit is over.
-        if self.limited and event in ("PreToolUse", "PostToolUse", "Stop"):
-            self.limited = False
-            self.limited_until = None
-
-        if self.awaiting_answer:
-            # Hold entirely until real progress resumes, same as
-            # claude_desktop_backend.py's own question-hold logic. Stop ALSO
-            # clears the hold, straight to finished -- a Notification has no
-            # guarantee a matching UserPromptSubmit/PreToolUse ever follows
-            # (permission resolved some other way, or the turn just legitimately
-            # ends on its own). Without this, a Stop arriving mid-hold was
-            # silently swallowed by the `return result` below and the light
-            # stuck on QUESTION forever, until whatever NEXT turn happened to
-            # fire one of the other two events -- observed live.
-            if event in ("UserPromptSubmit", "PreToolUse") or (
-                    event == "PostToolUse" and status.get("tool_name") == QUESTION_TOOL):
-                result["answer_received"] = True
-                self.awaiting_answer = False
-                self.busy = True
-            elif event == "Stop":
-                result["finished"] = True
-                self.awaiting_answer = False
-                self.busy = False
-            return result
-
-        if event == "UserPromptSubmit":
-            result["prompt_sent"] = True
-            self.busy = True
-        elif event == "PreToolUse":
-            result["thinking_started"] = True
-            self.busy = True
-        elif event == "PostToolUse":
-            # The tool call is over -- successfully, in error, or rejected
-            # by the user -- either way THINKING is over. This is what lets
-            # a rejected/cancelled tool call self-heal back to ANALYZING
-            # immediately instead of sitting on THINKING forever (see
-            # "INTERRUPTED/REJECTED TURNS" above).
-            result["thinking_ended"] = True
-            self.busy = True
-        elif event == "Notification":
-            # notification_type "idle_prompt" ("Claude is waiting for your
-            # input") fires just from sitting idle ~60s -- it is NOT a real
-            # question, just a nudge that nothing new has happened. Treating
-            # it as QUESTION was a real bug: going idle for a minute (e.g.
-            # while reading a long response) turned the light red on its
-            # own, and it stayed red into the next prompt since QUESTION
-            # only clears on real progress. Every OTHER notification_type
-            # (a genuine tool-permission prompt, or an unrecognized/future
-            # type) still maps to QUESTION -- unknown defaults to "might
-            # actually need you", not the reverse, so a renamed/new type
-            # degrades to the old (safe) behavior rather than going silent.
-            if status.get("notification_type") != "idle_prompt":
-                result["question_started"] = True
-                self.awaiting_answer = True
-                self.busy = True
-            elif self.busy:
-                # idle_prompt mid-turn: Claude Code is waiting for input, so
-                # the turn ended without a Stop (Escape mid-response, a
-                # rejected tool call). This is the turn's real end signal --
-                # see INTERRUPTED/REJECTED TURNS above.
-                if debug:
-                    print("[debug] claude_code: idle_prompt while busy -- "
-                          "turn ended without a Stop -> DONE")
-                result["finished"] = True
-                self.busy = False
-        elif event == "Stop":
-            result["finished"] = True
-            self.busy = False
-        # SessionStart, or anything else future hook events might add:
-        # connection/lifecycle only, no state change.
-
+            print(f"[debug] claude_code: sessions={ {k[:8]: s.level for k, s in self.sessions.items()} } "
+                  f"-> {level} limited={self.limited}")
         return result
 
-    # -- internal helpers ----------------------------------------------------
+    # -- limits -------------------------------------------------------------
 
-    def _note_failure(self, status):
-        """A StopFailure: if its error means the usage limit is used up,
-        go LIMIT until the reset time in Claude Code's message (counted from
+    def note_failure(self, status):
+        """A StopFailure: if its error means the usage limit is used up, go
+        LIMIT until the reset time in Claude Code's message (counted from
         when the hook wrote it), or FALLBACK_HOLD if it doesn't say."""
         message = " ".join(t for t in (status.get("last_assistant_message"), status.get("error_details")) if t)
         if not is_limit_error(status.get("error"), message):
@@ -386,18 +236,54 @@ class ClaudeCodeBackend(ChatBackend):
         when = datetime.datetime.fromtimestamp(written) if written else datetime.datetime.now()
         until = parse_reset(message, now=when) or when + FALLBACK_HOLD
         if until > datetime.datetime.now():
-            self.limited = True
-            self.limited_until = until
+            self.limited, self.limited_until = True, until
 
-    def _read_status(self):
-        try:
-            with open(STATUS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return None
+    def clear_limit(self):
+        self.limited, self.limited_until = False, None
 
-    def _mtime(self) -> float:
-        try:
-            return os.path.getmtime(STATUS_FILE)
-        except Exception:
-            return 0.0
+    # -- for "done, unread" and tap-to-jump ---------------------------------
+
+    @property
+    def focus_target(self):
+        rank = {"question": 3, "thinking": 2, "running": 1, "idle": 0}
+        s = max(self.sessions.values(), key=lambda s: (rank.get(s.level, 0), s.last_event_at), default=None)
+        return HOST_TARGETS.get((s.host if s else None) or "", None)
+
+    # -- files ---------------------------------------------------------------
+
+    def _session(self, status):
+        sid = str(status.get("session_id") or "unknown")
+        return self.sessions.setdefault(sid, _Session(sid))
+
+    def _read_files(self, changed_only=False):
+        """(session id, status, mtime, path) for each session file -- or, with no
+        session folder yet (hooks from before it existed), the single
+        STATUS_FILE as one session."""
+        out = []
+        now = time.time()
+        paths = []
+        if os.path.isdir(SESSIONS_DIR):
+            paths = [os.path.join(SESSIONS_DIR, f) for f in os.listdir(SESSIONS_DIR) if f.endswith(".json")]
+        elif os.path.exists(STATUS_FILE):
+            paths = [STATUS_FILE]
+        for p in paths:
+            try:
+                mtime = os.path.getmtime(p)
+                sid_key = os.path.splitext(os.path.basename(p))[0] if p != STATUS_FILE else "legacy"
+                if changed_only and self.mtimes.get(p) == mtime:
+                    continue
+                with open(p, encoding="utf-8") as f:
+                    status = json.load(f)
+            except Exception:
+                continue
+            ended = status.get("event") == "SessionEnd"
+            if (ended and now - mtime > PRUNE_ENDED_AFTER) or now - mtime > PRUNE_ANY_AFTER:
+                if p != STATUS_FILE:
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+                continue
+            status.setdefault("session_id", sid_key)
+            out.append((str(status.get("session_id")), status, mtime, p))
+        return out

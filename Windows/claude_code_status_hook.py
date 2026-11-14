@@ -59,7 +59,7 @@ import os
 import sys
 import time
 
-from claude_code_status_shared import STATUS_FILE
+from claude_code_status_shared import SESSIONS_DIR, STATUS_FILE
 
 
 def main():
@@ -99,21 +99,38 @@ def main():
         status["error_details"] = _short(payload.get("error_details"))
         status["last_assistant_message"] = _short(payload.get("last_assistant_message"))
 
+    # Push it to the running watcher first (event_server.py): it wakes at once
+    # and gets every event in order, even several within one second. Instant
+    # "connection refused" when the watcher isn't running.
     try:
-        os.makedirs(os.path.dirname(STATUS_FILE), exist_ok=True)
-        # Write to a temp file + replace rather than writing STATUS_FILE
-        # directly -- the backend polls this file's mtime/content on a
-        # separate process at an arbitrary moment, and a partial write
-        # (killed mid-write, disk hiccup) would otherwise hand it truncated
-        # JSON instead of either the old or new state cleanly.
-        tmp_path = STATUS_FILE + ".tmp"
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(status, f)
-        os.replace(tmp_path, STATUS_FILE)
+        import event_server
+        event_server.post({"source": "claude_code", "kind": "event", **status}, timeout=0.3)
     except Exception:
         pass
 
+    # Then the files, which the watcher reads on startup and if a push was
+    # missed: this session's own file, plus the single shared STATUS_FILE for
+    # watchers from before per-session files.
+    sid = "".join(c for c in str(status["session_id"] or "unknown") if c.isalnum() or c in "-_")[:80]
+    for path in (os.path.join(SESSIONS_DIR, sid + ".json"), STATUS_FILE):
+        _write_atomic(path, status)
+
     _append_history(status, payload)
+
+
+def _write_atomic(path, status):
+    # Write to a temp file + replace rather than writing the file directly --
+    # the backend reads it from another process at an arbitrary moment, and a
+    # partial write (killed mid-write, disk hiccup) would otherwise hand it
+    # truncated JSON instead of either the old or new state cleanly.
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp_path = path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(status, f)
+        os.replace(tmp_path, path)
+    except Exception:
+        pass
 
 
 def _short(value, limit=300):

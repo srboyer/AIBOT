@@ -13,3 +13,8 @@ see any events, with no error anywhere).
 import os
 
 STATUS_FILE = os.path.join(os.path.expanduser("~"), ".claude", "claude_code_status.json")
+
+# One status file per session (named by session id), so several Claude Code
+# sessions at once no longer overwrite each other. STATUS_FILE is still
+# written too, for watchers from before this existed.
+SESSIONS_DIR = os.path.join(os.path.expanduser("~"), ".claude", "maica_sessions")

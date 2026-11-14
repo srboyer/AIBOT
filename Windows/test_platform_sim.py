@@ -137,6 +137,86 @@ a.state, b.state, c.state = State.DONE, State.QUESTION, State.THINKING
 check("thinking gives way when nothing's analyzing", (fs.update([a, b, c]), fs.positions),
       ([State.QUESTION, State.DONE], ["b", "a"]))
 
+# --- Codex: questions asked while it keeps working (request_user_input_async) ---------
+import datetime as dt
+import os
+import tempfile
+
+import codex_backend as cb
+
+home = tempfile.mkdtemp()
+os.environ["CODEX_HOME"] = home
+day = os.path.join(home, "sessions", "2026", "11", "13")
+os.makedirs(day)
+
+
+def stamp(ago=0):
+    return (dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=ago)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def ev(t, ago=0, **payload):
+    return json.dumps({"timestamp": stamp(ago), "type": "event_msg", "payload": {"type": t, **payload}})
+
+
+def item(t, ago=0, **payload):
+    return json.dumps({"timestamp": stamp(ago), "type": "response_item", "payload": {"type": t, **payload}})
+
+
+def user(text):
+    return item("message", role="user", content=[{"type": "input_text", "text": text}])
+
+
+def ask(call_id, ago=0):
+    return item("function_call", ago, name="request_user_input_async", call_id=call_id,
+                arguments='{"questions":[{"title":"What size magnet?"}]}')
+
+
+def write(name, *lines):
+    with open(os.path.join(day, name), "a", encoding="utf-8") as f:
+        f.write("".join(line + "\n" for line in lines))
+
+
+write("root.jsonl", ev("task_started"), user("Add a magnet pocket"), item("reasoning"))
+b = cb.CodexBackend()
+b.try_connect()
+b.poll()
+check("codex: working", b._level(), "thinking")
+write("root.jsonl", ask("call_q1"), item("function_call_output", call_id="call_q1", output='{"accepted":true}'),
+      item("function_call", name="spawn_agent"))
+r = b.poll()
+check("codex: async question shows while it keeps working", (b._level(), r["question_started"]), ("question", True))
+# A helper agent's log starts with a copy of the conversation, question included.
+write("child.jsonl", user("Add a magnet pocket"), ask("call_q1"), ev("task_started"), item("reasoning"))
+b.next_scan = 0
+b.poll()
+write("root.jsonl", ev("task_complete"))
+b.poll()
+check("codex: still asking after the turn ends", b._level(), "question")
+write("root.jsonl", user('<send_user_message_question_reply>\n[{"questionItemId":"[\\"request_user_input_async\\",'
+                         '\\"call_q1\\",0]","answer":"10 x 3 mm disc"}]'), ev("task_started"))
+b.poll()
+check("codex: answered in the parent's log -> the helper's copy closes too", b._level(), "thinking")
+write("child.jsonl", ev("task_complete"))
+write("root.jsonl", ask("call_q2"), ev("task_complete"))
+b.poll()
+check("codex: second question", b._level(), "question")
+write("root.jsonl", user("Never mind, just make it 10 mm"), ev("task_started"))
+b.poll()
+check("codex: a typed prompt instead of an answer closes it", b._level(), "running")
+write("root.jsonl", ev("task_complete"))
+b.poll()
+
+# Starting up: an open question is shown; one asked hours ago and never answered isn't.
+write("root.jsonl", ask("call_old", ago=4 * 3600))
+b2 = cb.CodexBackend()
+b2.try_connect()
+check("codex: old unanswered question let go", b2._level(), "idle")
+write("root.jsonl", ask("call_q3"))
+b3 = cb.CodexBackend()
+b3.try_connect()
+r = b3.poll()
+check("codex: question already open at startup is shown", (b3._level(), r["question_started"]), ("question", True))
+
 # --- the board's events -----------------------------------------------------------------
 class FakeLight(Light):
     def __init__(self):

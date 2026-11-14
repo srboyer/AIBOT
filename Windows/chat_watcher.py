@@ -392,12 +392,17 @@ class FaceSlots:
     its position frees up. With one face or none left, the screen goes back
     to a single face (and that face counts as the left one, so the next app
     to go busy splits off to the right). A third busy app waits for a free
-    position -- the merged state still covers it.
+    position -- except when it asks you something: a question takes the
+    side of an app that's only working (analyzing before thinking), so it's
+    never hidden behind two busy faces. The app it displaced is still
+    tracked and gets a side back when one frees up. Two questions on screen
+    already, or a face mid-DONE-flash, and it waits like any other.
 
     update() returns [left_state, right_state] while split, else []."""
 
     BUSY = (State.ANALYZING, State.THINKING, State.QUESTION)
     RESTING = (State.IDLE, State.UNREAD)
+    BUMPABLE = (State.ANALYZING, State.THINKING)  # in the order they give way
 
     def __init__(self):
         self.positions = [None, None]
@@ -409,11 +414,27 @@ class FaceSlots:
         for s in slots:
             if s.state in self.BUSY and s.name not in self.positions and None in self.positions:
                 self.positions[self.positions.index(None)] = s.name
+        for s in slots:
+            if s.state is State.QUESTION and s.name not in self.positions:
+                side = self._side_to_give_up(by_name)
+                if side is None:
+                    break
+                print(f"[faces] {s.name} has a question -> takes {self.positions[side]}'s side")
+                self.positions[side] = s.name
         if None in self.positions:
             # One face or none: back to a single face, which counts as the left.
             self.positions = ([n for n in self.positions if n is not None] + [None, None])[:2]
             return []
         return [by_name[n].state for n in self.positions]
+
+    def _side_to_give_up(self, by_name):
+        """The side a question may take: one showing an app that's only
+        working, analyzing first. None if both are asking or finishing."""
+        for st in self.BUMPABLE:
+            for i, n in enumerate(self.positions):
+                if n is not None and by_name[n].state is st:
+                    return i
+        return None
 
 
 def apply_settings(cfg: dict):

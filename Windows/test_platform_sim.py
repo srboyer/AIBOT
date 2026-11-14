@@ -114,6 +114,29 @@ fs = cw.FaceSlots()
 check("accent: the limited app's colour", cw.accent_colors(slots, fs, [], gpt.shown_state), ["10A37F"])
 check("accent: nothing while idle", cw.accent_colors(slots, fs, [], State.IDLE), [])
 
+# --- split faces: a third app's question takes a working app's side -----------------------
+from types import SimpleNamespace as NS
+
+a, b, c = NS(name="a", state=State.ANALYZING), NS(name="b", state=State.THINKING), NS(name="c", state=State.IDLE)
+fs = cw.FaceSlots()
+check("two busy: split", fs.update([a, b, c]), [State.ANALYZING, State.THINKING])
+c.state = State.ANALYZING
+check("a third working app waits", (fs.update([a, b, c]), fs.positions), ([State.ANALYZING, State.THINKING], ["a", "b"]))
+c.state = State.QUESTION
+check("its question takes the analyzing side", (fs.update([a, b, c]), fs.positions),
+      ([State.QUESTION, State.THINKING], ["c", "b"]))
+c.state = State.ANALYZING  # answered: it keeps the side, a waits
+check("answered: keeps the side", fs.update([a, b, c]), [State.ANALYZING, State.THINKING])
+b.state = State.IDLE  # b finishes and rests: a gets that side back
+check("displaced app returns when a side frees", (fs.update([a, b, c]), fs.positions),
+      ([State.ANALYZING, State.ANALYZING], ["c", "a"]))
+a.state, c.state, b.state = State.QUESTION, State.QUESTION, State.QUESTION
+check("two questions on screen: a third waits", (fs.update([a, b, c]), fs.positions),
+      ([State.QUESTION, State.QUESTION], ["c", "a"]))
+a.state, b.state, c.state = State.DONE, State.QUESTION, State.THINKING
+check("thinking gives way when nothing's analyzing", (fs.update([a, b, c]), fs.positions),
+      ([State.QUESTION, State.DONE], ["b", "a"]))
+
 # --- the board's events -----------------------------------------------------------------
 class FakeLight(Light):
     def __init__(self):

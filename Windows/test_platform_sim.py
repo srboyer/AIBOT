@@ -217,6 +217,35 @@ b3.try_connect()
 r = b3.poll()
 check("codex: question already open at startup is shown", (b3._level(), r["question_started"]), ("question", True))
 
+# --- Codex: running out shows as a turn ending on a usage-limit error -----------------
+def done(ago=0, err=None, started_ago=60):
+    payload = {"started_at": time.time() - started_ago}
+    if err:
+        payload["error"] = {"message": err, "codex_error_info": "usage_limit_exceeded"}
+    return ev("task_complete", ago, **payload)
+
+
+def rate(limit_id, used, resets_in=3600):
+    win = {"used_percent": used, "window_minutes": 300, "resets_at": time.time() + resets_in} if used is not None else None
+    return ev("token_count", rate_limits={"limit_id": limit_id, "primary": win, "secondary": None,
+                                          "rate_limit_reached_type": None})
+
+
+write("limit.jsonl", ev("task_started"), rate("codex", 97), rate("premium", None),
+      done(err="You’ve hit your usage limit. Upgrade to Pro, purchase more credits or try again in 2h."))
+write("helper.jsonl", ev("task_started"), item("reasoning"))
+b4 = cb.CodexBackend()
+b4.try_connect()
+r = b4.poll()
+check("codex: limit error -> out of tokens (the last reading said 97%)", r["limited"], True)
+check("codex: ...until the time it gives", round((b4.limits["error"][1] - time.time()) / 3600, 1), 2.0)
+write("helper.jsonl", done(started_ago=120))  # a helper finishing work it began before the limit
+check("codex: a helper finishing its old task doesn't clear it", b4.poll()["limited"], True)
+write("limit.jsonl", ev("task_started"), done(started_ago=-1))  # a new turn that went through
+check("codex: a new turn going through clears it", b4.poll()["limited"], False)
+write("limit.jsonl", rate("codex", 100), rate("premium", None))
+check("codex: 100% isn't hidden by another limit's empty record", b4.poll()["limited"], True)
+
 # --- ChatGPT desktop stands aside while the window shows Codex ------------------------
 import chatgpt_desktop_backend as cdb
 

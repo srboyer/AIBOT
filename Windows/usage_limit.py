@@ -88,10 +88,10 @@ def is_limit_error(error, message="") -> bool:
 _MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
 _WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 _RESET_IN_RE = re.compile(
-    r"\breset[s]?\s+in\s+(?:(?P<h>\d+)\s*(?:h|hr|hrs|hour|hours)\b)?\s*(?:(?P<m>\d+)\s*(?:m|min|mins|minute|minutes)\b)?",
+    r"\b(?:reset[s]?|try again)\s+in\s+(?:(?P<h>\d+)\s*(?:h|hr|hrs|hour|hours)\b)?\s*(?:(?P<m>\d+)\s*(?:m|min|mins|minute|minutes)\b)?",
     re.IGNORECASE)
 _RESET_AT_RE = re.compile(
-    r"\b(?:reset[s]?|until|after)\s+(?:at\s+|on\s+)?"
+    r"\b(?:reset[s]?|until|after|try again)\s+(?:at\s+|on\s+)?"
     r"(?:(?P<wd>mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?,?\s+)?"
     r"(?:(?P<mon>jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(?P<day>\d{1,2})(?:st|nd|rd|th)?,?\s+(?:at\s+)?)?"
     r"(?P<hh>\d{1,2})(?::(?P<mm>\d{2}))?\s*(?P<ap>[ap]\.?\s?m\.?)?(?![\w:])",
@@ -103,7 +103,8 @@ def parse_reset(text, now=None):
     text doesn't say. Understands Claude Code's "resets 3pm", "resets
     3:30pm", "resets Nov 14, 9am" (an optional "(Europe/London)" after it is
     ignored -- times are taken as this PC's local time), "resets in 2h 15m",
-    and the chat apps' "until 3:00 PM" / "resets after 4:12 PM"."""
+    the chat apps' "until 3:00 PM" / "resets after 4:12 PM", and Codex's
+    "try again at 11:20 PM" / "try again in 2h"."""
     if not text:
         return None
     now = now or _dt.datetime.now()

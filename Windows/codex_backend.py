@@ -30,6 +30,14 @@ What the log says (observed in real logs on this machine):
                                        and weekly ("secondary") windows, and
                                        rate_limit_reached_type once one runs
                                        out -> OUT OF TOKENS until resets_at.
+                                       One record per limit ("limit_id": "codex",
+                                       "premium", ...); each is kept separately.
+    event_msg task_complete with       how running out actually shows (seen
+      error.codex_error_info           2026-11-13: the last token_count said
+      "usage_limit_exceeded"           97%): "You've hit your usage limit ...
+                                       try again at 11:20 PM." -> OUT OF TOKENS
+                                       until then (no DONE flash), or until a
+                                       later turn completes without an error.
 
 Several sessions at once count together (most active wins). Only message
 TYPES are read -- never your prompts or Codex's replies; the one exception
@@ -49,6 +57,7 @@ import time
 
 from chat_backend import ChatBackend
 from level_tracker import LevelTracker, combine
+from usage_limit import FALLBACK_HOLD, looks_like_limit_banner, parse_reset
 
 ACTIVE_WITHIN = 3 * 3600      # follow sessions whose log changed this recently (seconds)
 RESCAN_EVERY = 3.0            # look for new session logs this often (seconds)
@@ -149,20 +158,20 @@ class _Session:
         if kind == "event_msg":
             if t == "task_started":
                 self.level = "running"
-            elif t == "task_complete":
+            elif t in ("task_complete", "turn_aborted"):
+                err = p.get("error")
                 if self.level != "idle":
-                    self.ended = "finished"
+                    self.ended = "finished" if t == "task_complete" and not err else "failed"
                 self.level = "idle"
-            elif t == "turn_aborted":
-                if self.level != "idle":
-                    self.ended = "failed"
-                self.level = "idle"
+                _note_limit_error(limits, err, _when(e), t == "task_complete", p.get("started_at"))
             elif t in QUESTION_EVENTS and self.level != "idle":
                 self.level = "question"
             elif t == "token_count" and isinstance(p.get("rate_limits"), dict):
                 stamp = e.get("timestamp") or ""
-                if stamp >= limits.get("latest", ("", None))[0]:  # ISO times sort as text
-                    limits["latest"] = (stamp, p["rate_limits"])
+                by_id = limits.setdefault("by_id", {})
+                key = p["rate_limits"].get("limit_id") or "codex"
+                if stamp >= by_id.get(key, ("", None))[0]:  # ISO times sort as text
+                    by_id[key] = (stamp, p["rate_limits"])
         elif kind == "response_item":
             if t == "function_call" and p.get("name") in QUESTION_TOOLS:
                 self.questions.ask(p.get("call_id"), _when(e))
@@ -177,6 +186,50 @@ class _Session:
                     self.asked_here = set()
             if self.level != "idle":
                 self.level = "thinking" if t == "reasoning" else "running"
+
+
+def is_limit_error(err) -> bool:
+    """A turn's error that means your usage ran out (not a crash or a
+    network blip)."""
+    if not isinstance(err, dict):
+        return False
+    info = err.get("codex_error_info")
+    info = info if isinstance(info, str) else json.dumps(info or "")
+    return "usage_limit" in info or looks_like_limit_banner((err.get("message") or "")[:200])
+
+
+def _note_limit_error(limits, err, when, completed, started_at=None):
+    """Record (or clear) the limit a turn ended on. A turn that STARTED
+    after it and completes without an error means there's usage again --
+    not one that was already under way, like a helper agent finishing the
+    task it had when the limit hit (seen 7 s after the error, 2026-11-13)."""
+    if is_limit_error(err):
+        start = _dt.datetime.fromtimestamp(when)
+        until = parse_reset(err.get("message") or "", now=start)
+        if until is None:  # no time given: the 5-hour window's reset, else a fixed hold
+            resets = [w.get("resets_at") or 0 for _s, rl in limits.get("by_id", {}).values()
+                      for w in (rl.get("primary"),) if isinstance(w, dict)]
+            later = [r for r in resets if r > when]
+            until_ts = min(later) if later else (start + FALLBACK_HOLD).timestamp()
+        else:
+            until_ts = until.timestamp()
+        limits["error"] = (when, until_ts)
+    elif completed and not err and limits.get("error") and isinstance(started_at, (int, float))             and started_at > limits["error"][0]:
+        limits["error"] = None
+
+
+def codex_limited(limits, now=None):
+    """(limited, resets_at epoch or None) from everything the logs said: a
+    turn that ended on the limit, or any limit's windows at 100%."""
+    now = now or time.time()
+    error = limits.get("error")
+    if error and error[1] > now:
+        return True, error[1]
+    found = [limit_state(rl, now) for _stamp, rl in limits.get("by_id", {}).values()]
+    hits = [r for limited, r in found if limited]
+    if hits:
+        return True, max((r for r in hits if r), default=None)
+    return False, None
 
 
 def limit_state(rate_limits, now=None):
@@ -231,6 +284,7 @@ class CodexBackend(ChatBackend):
             return False
         self.sessions = {}
         self.questions = _Questions()
+        self.limits = {}
         self._scan()
         for s in self.sessions.values():
             s.read_new(self.limits, self.questions)
@@ -274,7 +328,7 @@ class CodexBackend(ChatBackend):
                 del self.sessions[path]
         level = self._level()
         result = self.tracker.feed(level, failed=failed and not finished)
-        limited, resets = limit_state(self.limits.get("latest", (None, None))[1])
+        limited, resets = codex_limited(self.limits)
         result["limited"] = limited
         if debug:
             print(f"[debug] codex: sessions={len(self.sessions)} level={level} limited={limited}")

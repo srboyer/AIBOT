@@ -169,14 +169,19 @@ def esptool_args(port: str, parts, reset: bool = True):
     return args
 
 
-def flash(port: str, parts, reset: bool = True, log=print) -> str:
+def flash(port: str, parts, reset: bool = True, log=None) -> str:
     """Write the firmware parts to the board on `port`. reset=False: the
     board is already in download mode (BOOT + RESET). Returns "ok",
     "needs-boot" (it didn't enter download mode by itself: press the
     buttons and try with reset=False), "busy" (something else has the
-    port) or "failed". esptool's progress goes to log(line)."""
+    port) or "failed". esptool's progress goes to log(line) -- by default
+    the console, which is captured below while esptool runs, so printing
+    must go to the real one (printing to the captured one loops forever)."""
     import esptool
 
+    if log is None or log is print:
+        console = sys.stdout
+        log = lambda line: print(line, file=console, flush=True)  # noqa: E731
     seen = []
 
     class _Lines(io.TextIOBase):

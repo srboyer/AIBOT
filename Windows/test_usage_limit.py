@@ -68,7 +68,7 @@ for text, want in [
 
 # --- LimitBannerWatch: scan cadence and when to trust "not found" --------------
 texts = []
-ul._candidate_texts = lambda root: list(texts)
+ul._candidate_texts = lambda root, **kw: list(texts)
 w = ul.LimitBannerWatch(every=1000)
 root = object()
 check("idle, no banner", w.check(lambda: root, busy=False), False)
@@ -177,6 +177,30 @@ with open(os.path.join(ccb.SESSIONS_DIR, "s4.json"), "w", encoding="utf-8") as f
 b3 = ccb.ClaudeCodeBackend()
 b3.try_connect()
 check("expired limit ignored on connect", b3.poll()["limited"], False)
+
+# --- ChatGPT: an old limit error in the conversation isn't a live banner ----------------
+import chatgpt_desktop_backend as cdb
+
+
+class FakeEl:
+    def __init__(self, name="", cls="", parent=None):
+        self.CurrentName, self.CurrentClassName, self.parent = name, cls, parent
+
+
+class FakeWalker:
+    def GetParentElement(self, e):
+        return e.parent
+
+
+page = FakeEl("Update the shell", "")
+convo = FakeEl("Conversation", "seededFooterPadding-ILoJ6A thread-scroll", page)
+old_error = FakeEl("You've hit your usage limit. Upgrade your plan...", "", FakeEl("", "outline-none", convo))
+composer_banner = FakeEl("You've hit the Plus plan limit for GPT-6.", "", FakeEl("", "composer", page))
+check("error in the conversation is history",
+      ul._inside(FakeWalker(), old_error, cdb.in_conversation), True)
+check("banner by the message box counts",
+      ul._inside(FakeWalker(), composer_banner, cdb.in_conversation), False)
+check("matched by class alone", cdb.in_conversation("", "x thread-scroll"), True)
 
 print(f"\n{'All usage-limit checks passed.' if not failures else f'{failures} FAILED'}")
 raise SystemExit(1 if failures else 0)

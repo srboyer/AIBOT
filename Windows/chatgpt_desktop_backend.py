@@ -49,6 +49,15 @@ from usage_limit import LimitBannerWatch
 QUESTION_EDIT_TITLE_RE = r"^Custom answer for .*"
 
 
+def in_conversation(name: str, class_name: str) -> bool:
+    """The conversation transcript (a region named "Conversation", class
+    "... thread-scroll", seen live 2026-11-13). An old "You've hit your
+    usage limit..." error stays in there after the limit resets, so limit
+    texts inside it are history, not a live banner -- those sit by the
+    message box. (Codex's limits come from its own logs: codex_backend.)"""
+    return name == "Conversation" or "thread-scroll" in class_name
+
+
 class ChatGPTDesktopBackend(ChatBackend):
     name = "chatgpt_desktop"
 
@@ -56,7 +65,7 @@ class ChatGPTDesktopBackend(ChatBackend):
         self.win = None
         self.armed = False  # True while a response is actively generating
         self.awaiting_answer = False  # True while an interactive question is up, unanswered
-        self.limit_watch = LimitBannerWatch()
+        self.limit_watch = LimitBannerWatch(skip_inside=in_conversation)
 
     # -- ChatBackend interface --------------------------------------------
 
@@ -80,7 +89,7 @@ class ChatGPTDesktopBackend(ChatBackend):
         self.win = win
         self.armed = False
         self.awaiting_answer = False
-        self.limit_watch = LimitBannerWatch()
+        self.limit_watch = LimitBannerWatch(skip_inside=in_conversation)
         return True
 
     def check_alive(self):

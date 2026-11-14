@@ -148,12 +148,34 @@ def looks_like_limit_banner(text) -> bool:
     return 0 < len(text) <= BANNER_MAX_CHARS and bool(LIMIT_BANNER_RE.search(text))
 
 
-def _candidate_texts(root):
+def _inside(walker, element, skip_inside, max_depth=16) -> bool:
+    """Whether an ancestor of `element` is one skip_inside(name, class_name)
+    picks out -- say, the conversation transcript."""
+    try:
+        p = walker.GetParentElement(element)
+        for _ in range(max_depth):
+            if not p:
+                return False
+            if skip_inside(p.CurrentName or "", p.CurrentClassName or ""):
+                return True
+            p = walker.GetParentElement(p)
+    except Exception:
+        pass
+    return False
+
+
+def _candidate_texts(root, skip_inside=None):
     """Names of the elements under `root` (a pywinauto wrapper or window
     spec) that contain one of BANNER_KEYWORDS. One UI Automation call doing
     the substring match on its side, so its cost doesn't grow with a long
     conversation's thousands of elements (reading each name from here
-    would)."""
+    would).
+
+    skip_inside(name, class_name), if given, marks containers whose
+    contents don't count -- the conversation itself, where an old "you've
+    hit your usage limit" error stays in the history long after the limit
+    reset. A banner-looking text inside one is left out. Only those few
+    are walked up, so it costs next to nothing."""
     from pywinauto.uia_defines import IUIA
 
     wrapper = root.wrapper_object() if hasattr(root, "wrapper_object") else root
@@ -166,10 +188,15 @@ def _candidate_texts(root):
     for c in conds[1:]:
         cond = iuia.CreateOrCondition(cond, c)
     found = element.FindAll(TreeScope_Descendants, cond)
+    walker = iuia.ControlViewWalker if skip_inside else None
     names = []
     for i in range(min(found.Length, 60)):
         try:
-            names.append(found.GetElement(i).CurrentName or "")
+            e = found.GetElement(i)
+            name = e.CurrentName or ""
+            if skip_inside and looks_like_limit_banner(name) and _inside(walker, e, skip_inside):
+                continue
+            names.append(name)
         except Exception:
             continue
     return names
@@ -182,8 +209,9 @@ class LimitBannerWatch:
     answer: the app is clearly answering, and a state that's showing work
     outranks LIMIT anyway."""
 
-    def __init__(self, every: float = BANNER_SCAN_SECONDS):
+    def __init__(self, every: float = BANNER_SCAN_SECONDS, skip_inside=None):
         self.every = every
+        self.skip_inside = skip_inside  # see _candidate_texts
         self.limited = False
         self.next_scan = 0.0
         self.was_busy = False
@@ -205,7 +233,7 @@ class LimitBannerWatch:
             root = get_root()
             if root is None:
                 return self.limited
-            texts = _candidate_texts(root)
+            texts = _candidate_texts(root, skip_inside=self.skip_inside)
         except Exception as e:
             if debug:
                 print(f"[limit] {label}: banner search failed ({e})")

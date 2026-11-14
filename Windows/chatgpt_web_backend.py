@@ -52,7 +52,7 @@ import time
 
 from pywinauto import Desktop
 
-from chatgpt_desktop_backend import ChatGPTDesktopBackend
+from chatgpt_desktop_backend import ChatGPTDesktopBackend, in_conversation
 from usage_limit import LimitBannerWatch
 
 BROWSER_SUFFIX = r"(Google Chrome|Microsoft.{0,2}Edge|Mozilla Firefox|Brave|Opera|Vivaldi)$"
@@ -104,7 +104,7 @@ class ChatGPTWebBackend(ChatGPTDesktopBackend):
             self.win = spec
             self.armed = False
             self.awaiting_answer = False
-            self.limit_watch = LimitBannerWatch()
+            self.limit_watch = LimitBannerWatch(skip_inside=in_conversation)
             return True
         return False
 

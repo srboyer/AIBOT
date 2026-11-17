@@ -86,7 +86,7 @@ CHEER_AFTER = (45.0, 240.0)  # a turn at least this long (s) gets celebration le
 UNREAD_ENABLED = True
 UNREAD_SECONDS = 20 * 60.0
 CHEER_ENABLED = True
-ACCENT_ENABLED = True
+ACCENT_ENABLED = False
 DOUBLE_TAP_JUMP = True
 
 BACKENDS = {
@@ -446,7 +446,7 @@ def apply_settings(cfg: dict):
     UNREAD_ENABLED = bool(cfg.get("unread", True))
     UNREAD_SECONDS = float(cfg.get("unread_minutes", 20)) * 60.0
     CHEER_ENABLED = bool(cfg.get("cheer", True))
-    ACCENT_ENABLED = bool(cfg.get("accent", True))
+    ACCENT_ENABLED = bool(cfg.get("accent", False))
     DOUBLE_TAP_JUMP = bool(cfg.get("double_tap_jump", True))
 
 

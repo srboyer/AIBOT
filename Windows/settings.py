@@ -31,7 +31,8 @@ DEFAULTS = {
     "unread": True,             # after a reply you haven't looked at, keep a "done, unread" look
     "unread_minutes": 20,       # ...for at most this long
     "cheer": True,              # celebrate long tasks finishing
-    "accent": True,             # tint MAICA's rim with the colour of the app it's showing
+    "accent": False,            # tint MAICA's rim with the colour of the app it's showing (off: on the
+                                # square screen the bar under the eyes reads as a mouth)
     "double_tap_jump": True,    # double-tap MAICA -> bring forward the app that needs you
     "voice": {
         "enabled": True,        # push-to-talk on the rev-2 board

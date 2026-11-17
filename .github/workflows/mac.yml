@@ -1,0 +1,93 @@
+# Builds MAICA for the Mac on GitHub's Macs -- Intel and Apple Silicon -- and
+# runs the test suites there. Every push to main, every pull request, and
+# on demand (Actions tab > Mac > Run workflow).
+#
+# Out (on each run's page, under Artifacts):
+#   maica-firmware        the four firmware parts the app carries
+#   MAICA-mac-x86_64      MAICA-<version>-x86_64.dmg  (Intel Macs)
+#   MAICA-mac-arm64       MAICA-<version>-arm64.dmg   (Apple Silicon)
+# Unsigned: the first open needs System Settings > Privacy & Security > Open
+# Anyway (see Windows/build_mac.sh for signing).
+name: Mac
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  firmware:
+    name: Firmware (ESP32 sketch)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Cache the ESP32 core
+        uses: actions/cache@v4
+        with:
+          path: ~/.arduino15
+          key: arduino15-esp32-3.3.12
+      - name: Install the ESP32 core and libraries (the versions MAICA is built with)
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@3.3.12
+          arduino-cli lib install "Adafruit GFX Library@1.13.0" "Adafruit BusIO@1.17.4" \
+            "Adafruit ST7735 and ST7789 Library@1.12.0" "Adafruit GC9A01A@1.2.0"
+      - name: Build the sketch
+        run: |
+          arduino-cli compile --build-path build \
+            --fqbn "esp32:esp32:esp32wrover:UploadSpeed=921600,FlashFreq=80,FlashMode=qio,PartitionScheme=default,DebugLevel=none,EraseFlash=none" \
+            Windows/maica_status_classicbt
+          mkdir -p firmware
+          cp build/maica_status_classicbt.ino.bootloader.bin firmware/bootloader.bin
+          cp build/maica_status_classicbt.ino.partitions.bin firmware/partitions.bin
+          cp build/boot_app0.bin firmware/boot_app0.bin
+          cp build/maica_status_classicbt.ino.bin firmware/maica.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maica-firmware
+          path: firmware/
+
+  mac:
+    name: Mac app (${{ matrix.arch }})
+    needs: firmware
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel   # Intel
+            arch: x86_64
+          - runner: macos-15         # Apple Silicon
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@v4
+        with:
+          name: maica-firmware
+          path: firmware
+      - name: Install the app's libraries
+        working-directory: Windows
+        run: python -m pip install -r requirements-mac.txt
+      - name: Test suites
+        working-directory: Windows
+        run: |
+          python test_usage_limit.py
+          python test_multi_watcher_sim.py
+          python test_platform_sim.py
+      - name: Build MAICA.app and the disk image
+        working-directory: Windows
+        env:
+          MAICA_USE_CURRENT_PYTHON: "1"
+          MAICA_FIRMWARE_DIR: ${{ github.workspace }}/firmware
+        run: |
+          chmod +x build_mac.sh
+          ./build_mac.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MAICA-mac-${{ matrix.arch }}
+          path: Windows/build_dist/mac/*.dmg

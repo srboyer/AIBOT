@@ -1,0 +1,9 @@
+# The MAICA desktop app on a Mac (build_mac.sh installs these, plus PyInstaller).
+pystray>=0.19.5
+pillow>=10
+pyserial>=3.5
+esptool>=5
+pyobjc-core>=10
+pyobjc-framework-Cocoa>=10
+pyobjc-framework-ApplicationServices>=10
+# Push-to-talk (rev-2 boards with a microphone) also needs: faster-whisper

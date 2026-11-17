@@ -97,5 +97,8 @@ class DesktopRuleBackend(ChatBackend):
 
 
 def backend_names():
-    """BACKENDS entries for every desktop rule: {"lmstudio": rule id}."""
-    return {r["id"]: r["id"] for r in rules.load().get("desktop", [])}
+    """BACKENDS entries for every desktop rule this computer can follow --
+    one with a window title on Windows, an app name on a Mac: {"lmstudio":
+    rule id}."""
+    key = "win_title" if sys.platform == "win32" else "mac_app" if sys.platform == "darwin" else None
+    return {r["id"]: r["id"] for r in rules.load().get("desktop", []) if key and r.get(key)}

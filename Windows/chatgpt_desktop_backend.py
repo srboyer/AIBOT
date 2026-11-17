@@ -41,10 +41,17 @@ import os
 import sys
 import time
 
-from pywinauto import Desktop
-
 from chat_backend import ChatBackend
 from usage_limit import LimitBannerWatch
+
+
+def Desktop(*args, **kwargs):
+    """pywinauto's Desktop, imported when first used -- so this module's
+    plain helpers (in_conversation, codex_thread_names) and its tests load
+    on a Mac too."""
+    from pywinauto import Desktop as _Desktop
+    return _Desktop(*args, **kwargs)
+
 
 # Matches "Custom answer for Where are you going?", "Custom answer for
 # What's your budget?", etc. -- see module docstring.

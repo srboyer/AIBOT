@@ -70,13 +70,15 @@
      "stop": ["button[aria-label^='Stop']"]}
   ],
 
-  "_desktop_about": "Generic desktop-app backends (desktop_rules_backend.py): Windows UI Automation by window title, macOS Accessibility by app name. RUNNING while a button whose name matches 'stop' exists. All unverified.",
+  "_desktop_about": "Generic desktop-app backends (desktop_rules_backend.py): Windows UI Automation by window title (win_title), macOS Accessibility by app name (mac_app); an app with only one of them is followed on that system only. RUNNING while a button whose name matches 'stop' exists. All unverified.",
   "desktop": [
     {"id": "lmstudio", "app": "lmstudio", "win_title": "^LM Studio", "mac_app": "LM Studio",
      "stop": "^(Stop|Stop generating|Stop Generating)$"},
     {"id": "ollama_app", "app": "ollama", "win_title": "^Ollama$", "mac_app": "Ollama",
      "stop": "^Stop\\b"},
     {"id": "perplexity_app", "app": "perplexity", "win_title": "^Perplexity$", "mac_app": "Perplexity",
+     "stop": "^Stop\\b"},
+    {"id": "copilot_mac", "app": "copilot", "mac_app": "Copilot",
      "stop": "^Stop\\b"}
   ]
 }

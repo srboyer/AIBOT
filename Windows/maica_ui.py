@@ -53,7 +53,15 @@ def _window(title: str):
         ttk.Style().theme_use("vista" if sys.platform == "win32" else "aqua" if sys.platform == "darwin" else "clam")
     except tk.TclError:
         pass
+    if sys.platform == "darwin":  # opened from the menu bar: come to the front, not behind the app in use
+        root.lift()
+        root.attributes("-topmost", True)
+        root.after(300, lambda: root.attributes("-topmost", False))
+        root.focus_force()
     return root
+
+
+HEADING_FONT = ("Segoe UI", 11, "bold") if sys.platform == "win32" else ("Helvetica", 14, "bold")
 
 
 # -- Settings -------------------------------------------------------------------
@@ -190,7 +198,7 @@ def run_setup():
 
     def text(frame, t, bold=False):
         ttk.Label(frame, text=t, wraplength=440, justify="left",
-                  font=("Segoe UI", 11, "bold") if bold else None).pack(anchor="w", pady=4)
+                  font=HEADING_FONT if bold else None).pack(anchor="w", pady=4)
 
     def step(build):
         steps.append(build)
@@ -200,12 +208,19 @@ def run_setup():
         text(f, f"Welcome to MAICA {VERSION}", bold=True)
         text(f, "MAICA shows what your AI apps are doing -- working, thinking, asking you something, done, or "
                 "running low on usage. This takes about two minutes: connect MAICA, then tell it which AI apps you use.")
+        from app_paths import running_from_disk_image
+        if running_from_disk_image():
+            text(f, "First, move MAICA into your Applications folder: drag MAICA from this window (or Downloads) "
+                    "into Applications, then open it from there. Run from here, the things that remember where "
+                    "MAICA is -- Claude Code's link, Start at login -- would break once this copy goes away.", bold=True)
+            ttk.Button(f, text="Open Applications", command=lambda: _open("/Applications")).pack(anchor="w", pady=6)
 
     @step
     def connect(f):
         text(f, "1. Connect MAICA", bold=True)
         text(f, "Switch MAICA on, then pair it: it appears as \"ClaudeStatusMatrix\" in your computer's Bluetooth "
-                "settings.")
+                "settings." + (" On a Mac, click Connect next to it; if macOS asks whether MAICA may use Bluetooth, "
+                               "allow it." if sys.platform == "darwin" else ""))
         status = ttk.Label(f, text="")
         def bt():
             _open("ms-settings:bluetooth" if sys.platform == "win32" else
@@ -229,6 +244,11 @@ def run_setup():
                 "MAICA's entries to ~/.claude/settings.json). Codex needs nothing: MAICA reads its session logs.")
         status = ttk.Label(f, text="")
         def hooks():
+            from app_paths import running_from_disk_image
+            if running_from_disk_image():
+                status.configure(text="Move MAICA into Applications and open it from there first (see the first "
+                                      "page) -- Claude Code would be pointed at a copy that goes away.")
+                return
             try:
                 install_claude_code_hooks()
                 status.configure(text="Claude Code is set up. New sessions are picked up automatically.")
@@ -254,16 +274,36 @@ def run_setup():
                 root.clipboard_append(u)
                 messagebox.showinfo("MAICA", f"Copied {u} -- paste it into your browser's address bar.")
             ttk.Button(row, text=label, command=go).pack(side="left", padx=(0, 6))
-        text(f, "Desktop apps (Claude, ChatGPT, Copilot, LM Studio...) need nothing extra on Windows.")
+        if sys.platform == "darwin":
+            text(f, "Desktop apps (Claude, ChatGPT, Copilot, LM Studio...) need one permission -- the next step.")
+        else:
+            text(f, "Desktop apps (Claude, ChatGPT, Copilot, LM Studio...) need nothing extra on Windows.")
 
     if sys.platform == "darwin":
         @step
         def access(f):
             text(f, "4. Let MAICA see your apps", bold=True)
-            text(f, "On a Mac, MAICA reads the Claude and ChatGPT apps (and types for push-to-talk) through "
-                    "Accessibility. Turn MAICA on in the list this opens.")
-            ttk.Button(f, text="Open Accessibility settings", command=lambda: _open(
-                "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")).pack(anchor="w")
+            text(f, "On a Mac, MAICA reads the desktop apps (Claude, ChatGPT, Copilot, LM Studio...) through "
+                    "Accessibility. Turn MAICA on in the list this opens -- if it isn't listed, click + and pick "
+                    "MAICA in Applications.")
+            status = ttk.Label(f, text="")
+            def check():
+                try:
+                    import mac_ax
+                    ok = mac_ax.is_trusted()
+                except Exception:
+                    ok = False
+                status.configure(text="MAICA can see your apps." if ok else
+                                 "Not yet -- turn MAICA on in the list, then check again. (A change can need "
+                                 "MAICA restarting: menu bar icon > Restart MAICA.)")
+            row = ttk.Frame(f); row.pack(anchor="w", pady=6)
+            ttk.Button(row, text="Open Accessibility settings", command=lambda: _open(
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")).pack(side="left",
+                                                                                                    padx=(0, 6))
+            ttk.Button(row, text="Check", command=check).pack(side="left")
+            status.pack(anchor="w")
+            text(f, "Push-to-talk types into the app in front: the first time, macOS asks whether MAICA may "
+                    "control System Events -- allow it.")
 
     @step
     def done(f):

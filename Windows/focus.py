@@ -11,6 +11,7 @@ A target is described by a dict, any of:
     {"title": regex for the window title (Windows),
      "process": executable name, e.g. "Claude.exe" (Windows),
      "mac_app": application name, e.g. "Claude" (macOS)}
+"process" and "mac_app" may also be lists of names.
 """
 
 import re
@@ -32,11 +33,15 @@ def foreground():
     return None, None
 
 
+def _names(value):
+    return [value] if isinstance(value, str) else list(value or [])
+
+
 def matches(target: dict, title, process) -> bool:
     if not target:
         return False
     if sys.platform == "darwin":
-        return bool(target.get("mac_app")) and process == target["mac_app"]
+        return process is not None and process in _names(target.get("mac_app"))
     ok = False
     if target.get("process") and process:
         names = target["process"]  # one program name, or a list of them
@@ -64,7 +69,14 @@ def bring_to_front(target: dict) -> bool:
         if sys.platform == "win32":
             return _win_bring(target)
         if sys.platform == "darwin" and target.get("mac_app"):
-            name = target["mac_app"].replace('"', "")
+            names = _names(target["mac_app"])
+            try:  # the one that's running, if any
+                from AppKit import NSWorkspace
+                running = {str(a.localizedName()) for a in NSWorkspace.sharedWorkspace().runningApplications()}
+                names = [n for n in names if n in running] or names
+            except Exception:
+                pass
+            name = names[0].replace('"', "")
             subprocess.run(["osascript", "-e", f'tell application "{name}" to activate'], timeout=5,
                            capture_output=True)
             return True

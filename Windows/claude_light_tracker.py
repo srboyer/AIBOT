@@ -359,6 +359,28 @@ class ArduinoLight(Light):
         self.ser.close()
 
 
+def _squash(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def _mac_bt_port(device_name: str, ports=None) -> str:
+    """macOS makes a serial device for a paired Classic Bluetooth SPP device,
+    named after it -- /dev/cu.<name>, sometimes with a suffix, and with
+    spaces or odd characters changed -- so match on the name's letters and
+    digits. UNTESTED on a real Mac so far."""
+    import glob
+    if ports is None:
+        ports = sorted(glob.glob("/dev/cu.*"))
+    want = _squash(device_name)
+    found = [p for p in ports if _squash(p.split("/dev/cu.", 1)[-1]).startswith(want)]
+    if found:
+        return found[0]
+    others = [p for p in ports if "bluetooth-incoming-port" not in p.lower()
+              and not re.search(r"usbserial|usbmodem|slab_|wchusb|debug-console", p, re.I)]
+    raise RuntimeError(f"{device_name!r} isn't paired (no /dev/cu.{device_name}). Pair it in System Settings > "
+                       "Bluetooth first." + (f" Bluetooth serial ports seen: {', '.join(others)}." if others else ""))
+
+
 def find_classic_bt_port(device_name: str = "ClaudeStatusMatrix") -> str:
     """Resolves the Windows COM port for a paired Classic Bluetooth SPP
     device (e.g. an ESP32 running claude_matrix_esp32_classicbt.ino), so a
@@ -375,14 +397,7 @@ def find_classic_bt_port(device_name: str = "ClaudeStatusMatrix") -> str:
     """
 
     if sys.platform == "darwin":
-        # macOS makes a serial device for a paired Classic Bluetooth SPP
-        # device, named after it: /dev/cu.<name> (sometimes with a suffix).
-        import glob
-        ports = sorted(glob.glob(f"/dev/cu.{device_name}*"))
-        if not ports:
-            raise RuntimeError(f"{device_name!r} isn't paired (no /dev/cu.{device_name}). Pair it in "
-                               "System Settings > Bluetooth first.")
-        return ports[0]
+        return _mac_bt_port(device_name)
 
     def _pnp_query(ps_filter: str):
         script = (

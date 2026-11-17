@@ -50,6 +50,9 @@ HOOK_EXE_NAME = "ClaudeCodeHook.exe"
 # _is_ours() still recognizes -- and upgrades in place -- a hook entry
 # registered by an older version of this installer.
 HOOK_SCRIPT_NAME = "claude_code_status_hook.py"
+# The Mac app is its own hook: "<MAICA.app>/Contents/MacOS/MAICA --claude-hook"
+# (see maica_app.py) -- a Mac has no Python to run the script with.
+MAC_HOOK_FLAG = "--claude-hook"
 
 # (event name, matcher or None) -- order matches claude_code_status_hook.py's
 # own docstring list.
@@ -92,6 +95,14 @@ def default_hook_exe_path() -> str:
     return os.path.join(_this_install_dir(), HOOK_EXE_NAME)
 
 
+def default_hook_command() -> str:
+    """The command to register: the packaged Mac app with MAC_HOOK_FLAG, or
+    ClaudeCodeHook.exe next to this installer on Windows."""
+    if sys.platform == "darwin" and getattr(sys, "frozen", False):
+        return f'"{os.path.abspath(sys.executable)}" {MAC_HOOK_FLAG}'
+    return build_hook_command(default_hook_exe_path())
+
+
 def build_hook_command(hook_exe_path: str) -> str:
     # Just the quoted exe path -- no "py -3.11" launcher needed since
     # ClaudeCodeHook.exe is a standalone PyInstaller build (see
@@ -102,7 +113,7 @@ def build_hook_command(hook_exe_path: str) -> str:
 
 
 def _is_ours(command: str) -> bool:
-    return HOOK_EXE_NAME in command or HOOK_SCRIPT_NAME in command
+    return HOOK_EXE_NAME in command or HOOK_SCRIPT_NAME in command or MAC_HOOK_FLAG in command
 
 
 def merge_hooks(settings: dict, hook_command: str) -> tuple[dict, bool]:
@@ -202,8 +213,7 @@ def install(settings_path: str = None, hook_exe_path: str = None) -> bool:
     file was actually changed (False means it was already correctly
     registered -- a normal, expected outcome on a repeat run)."""
     settings_path = settings_path or default_settings_path()
-    hook_exe_path = hook_exe_path or default_hook_exe_path()
-    hook_command = build_hook_command(hook_exe_path)
+    hook_command = build_hook_command(hook_exe_path) if hook_exe_path else default_hook_command()
 
     try:
         with open(settings_path, "r", encoding="utf-8") as f:

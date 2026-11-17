@@ -11,6 +11,7 @@ Run: py -3.11 test_platform_sim.py
 """
 
 import json
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -78,7 +79,7 @@ check("busy -> idle on an error: failed, not finished", (r.get("failed"), r["fin
 cw.UNREAD_ENABLED = True
 cw.DONE_FLASH_SECONDS = 0.0
 gpt = cw.BackendSlot("web_chatgpt")
-claude_web = cw.BackendSlot("claude_web")
+claude_web = cw.BackendSlot("claude_web") if sys.platform == "win32" else None  # a Windows-only backend
 slots = [gpt]
 
 gpt.tick()
@@ -106,9 +107,10 @@ check("limit banner: no purple face, the low battery instead", (gpt.shown_state,
 
 # The extension covering claude.ai makes the UI-Automation backend stand down.
 tab("9", "claude", "idle")
-claude_web.connected = True
-claude_web.tick()
-check("claude_web stands down for the extension", (claude_web.connected, claude_web.standing_down), (False, True))
+if claude_web is not None:
+    claude_web.connected = True
+    claude_web.tick()
+    check("claude_web stands down for the extension", (claude_web.connected, claude_web.standing_down), (False, True))
 
 # --- rim colours ----------------------------------------------------------------------
 fs = cw.FaceSlots()

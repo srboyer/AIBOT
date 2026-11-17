@@ -29,12 +29,31 @@ main thread.
 
     py -3.11 maica_app.py                 the app
     py -3.11 maica_app.py --settings      just the Settings window (also --setup, --firmware)
+    MAICA --claude-hook                   (Mac app) Claude Code's status hook, see below
+
+On a Mac the packaged app is also Claude Code's hook: the setup guide
+registers "<MAICA.app>/Contents/MacOS/MAICA --claude-hook", which runs
+claude_code_status_hook and exits before anything heavier loads -- a Mac
+has no Python of its own to run the hook script with. (Windows ships a
+separate ClaudeCodeHook.exe.)
+
+pystray builds the icon's menu once, so it's rebuilt when what it shows
+changes. That happens on the icon's own thread (App.on_main): the Mac menu
+bar may only be touched from the main thread, and on Windows a menu rebuilt
+from the watcher thread could vanish from under you while it's open.
 """
+
+import sys
+
+if __name__ == "__main__" and "--claude-hook" in sys.argv:
+    import claude_code_status_hook
+    claude_code_status_hook.main()
+    sys.exit(0)
 
 import argparse
 import os
+import queue
 import subprocess
-import sys
 import threading
 import time
 import webbrowser
@@ -44,7 +63,7 @@ import chat_watcher
 import event_server
 import rules
 import settings as settings_mod
-from app_paths import log_path
+from app_paths import log_path, running_from_disk_image
 from app_version import VERSION
 from claude_light_tracker import ArduinoLight, BLELight, ConsoleLight, find_classic_bt_port
 
@@ -83,6 +102,9 @@ def _relaunch(flag):
     subprocess.Popen(cmd, **kwargs)
 
 
+WM_MAICA_CALL = 0x0400 + 42  # WM_USER + 42: run what App.on_main queued, on the icon's thread (Windows)
+
+
 def icon_image(state: str):
     from PIL import Image, ImageDraw
     s = 64
@@ -101,6 +123,38 @@ class App:
         self.stop = threading.Event()
         self.icon = None
         self.shown_state = None
+        self.menu_sig = None
+        self.calls = queue.Queue()  # for the icon's thread (Windows)
+
+    def on_main(self, fn):
+        """Run fn on the icon's thread: the Mac's main thread (AppKit's rule
+        for anything in the menu bar), or the tray icon's message loop on
+        Windows. Before the icon is up, right here."""
+        if sys.platform == "darwin":
+            try:
+                from PyObjCTools import AppHelper
+                AppHelper.callAfter(fn)
+                return
+            except Exception:
+                pass
+        hwnd = getattr(self.icon, "_hwnd", None)
+        if sys.platform == "win32" and hwnd:
+            import ctypes
+            self.calls.put(fn)
+            ctypes.windll.user32.PostMessageW(hwnd, WM_MAICA_CALL, 0, 0)
+            return
+        fn()
+
+    def _run_calls(self, _wparam=0, _lparam=0):
+        while True:
+            try:
+                fn = self.calls.get_nowait()
+            except queue.Empty:
+                return 0
+            try:
+                fn()
+            except Exception as e:
+                print(f"[app] menu update failed: {e}")
 
     # -- the watcher, in the background ---------------------------------------------
 
@@ -121,13 +175,26 @@ class App:
 
     def on_status(self, snap):
         self.status = snap
-        if self.icon is not None and snap.get("showing") != self.shown_state:
-            self.shown_state = snap.get("showing")
+        if self.icon is None:
+            return
+        showing = snap.get("showing")
+        menu_sig = (showing, snap.get("light"),
+                    tuple((a["name"], a["state"]) for a in snap.get("apps", []) if a.get("connected")))
+        icon_changed, menu_changed = showing != self.shown_state, menu_sig != self.menu_sig
+        if not (icon_changed or menu_changed):
+            return
+        self.shown_state, self.menu_sig = showing, menu_sig
+
+        def apply():
             try:
-                self.icon.icon = icon_image(self.shown_state)
-                self.icon.title = f"MAICA: {STATE_WORDS.get(self.shown_state, self.shown_state)}"
+                if icon_changed:
+                    self.icon.icon = icon_image(showing)
+                    self.icon.title = f"MAICA: {STATE_WORDS.get(showing, showing)}"
+                if menu_changed:
+                    self.icon.update_menu()  # the header and the app list are worked out afresh
             except Exception:
                 pass
+        self.on_main(apply)
 
     # -- menu -----------------------------------------------------------------------
 
@@ -219,8 +286,35 @@ class App:
             Item(f"Quit MAICA {VERSION}", self.quit),
         )
         self.icon = pystray.Icon("MAICA", icon_image("idle"), "MAICA", menu)
+        handlers = getattr(self.icon, "_message_handlers", None)  # pystray's Windows message loop
+        if isinstance(handlers, dict):
+            handlers[WM_MAICA_CALL] = self._run_calls
         self.start_watcher()
         self.icon.run()
+
+
+def self_test() -> int:
+    """Load every backend this computer would run and every module the
+    windows use -- what a packaged build leaves out shows up here, not in
+    a customer's hands."""
+    import tkinter
+    import claude_code_hook_installer  # noqa: F401
+    import claude_code_status_hook  # noqa: F401
+    import esptool  # noqa: F401
+    import firmware_update
+    import maica_ui  # noqa: F401
+    import updater  # noqa: F401
+    from app_paths import bundled
+    names = chat_watcher.resolve_backends("all")
+    for name in names:
+        chat_watcher.load_backend(name)
+    tkinter.Tcl()  # Tcl/Tk is inside the bundle
+    assert rules.load()["sites"], "no rules"
+    extras = [label for label, ok in (("firmware", firmware_update.bundled_parts() is not None),
+                                      ("browser extension", os.path.isdir(bundled(os.path.join("extension", "dist")))))
+              if ok]
+    print(f"MAICA {VERSION} self-test OK: {len(names)} backends load; bundled: {', '.join(extras) or 'nothing extra'}")
+    return 0
 
 
 def main(argv=None):
@@ -228,7 +322,11 @@ def main(argv=None):
     ap.add_argument("--settings", action="store_true")
     ap.add_argument("--setup", action="store_true")
     ap.add_argument("--firmware", action="store_true")
+    ap.add_argument("--self-test", action="store_true",
+                    help="load every part of the app and exit (checks a packaged build is complete)")
     a = ap.parse_args(argv)
+    if a.self_test:
+        return self_test()
 
     import maica_ui
     if a.settings:
@@ -247,10 +345,13 @@ def main(argv=None):
     cfg = settings_mod.load()
     if first_run:
         settings_mod.save(cfg)
-        _relaunch("--setup")
     print(f"[app] MAICA {VERSION} starting")
+    if running_from_disk_image():
+        print("[app] running from the disk image / a temporary copy -- move MAICA to Applications")
+    if first_run or running_from_disk_image():
+        _relaunch("--setup")  # (its first page asks for the move to Applications, if needed)
     App(cfg).run()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

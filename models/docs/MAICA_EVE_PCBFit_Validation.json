@@ -1,0 +1,1037 @@
+{
+  "design": {
+    "version": "MAICA_EVE_PCBFit",
+    "pcb_source_step": "3D_PCB1_1_2026-11-11.step",
+    "mounting_holes_gerber": "Gerber_PCB1_1_2026-11-11 (1).zip",
+    "pcb_transform": [
+      [
+        -1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0,
+        -11.25
+      ],
+      [
+        0.0,
+        1.0,
+        0.0,
+        5.303076748740491
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "pcb_thickness_mm": 1.625781051562,
+    "mounts": [
+      {
+        "index": 0,
+        "source_hole_xy_mm": [
+          9.078,
+          17.622
+        ],
+        "assembly_axis_xz_mm": [
+          -9.078,
+          22.92507674874049
+        ],
+        "contact_seat_y_mm": -9.624218948438,
+        "neck_diameter_mm": 4.2,
+        "neck_length_mm": 1.5,
+        "main_post_diameter_mm": 7,
+        "through_clearance_diameter_mm": 2.2,
+        "nut_pocket_af_mm": 4.3,
+        "nut_pocket_axial_depth_mm": 2.0,
+        "screw": "M2 x 8, head <=4.0mm diameter and <=1.5mm high",
+        "nut": "M2 hex nut,4.0mm AF,1.6mm thick"
+      },
+      {
+        "index": 1,
+        "source_hole_xy_mm": [
+          -9.078,
+          17.622
+        ],
+        "assembly_axis_xz_mm": [
+          9.078,
+          22.92507674874049
+        ],
+        "contact_seat_y_mm": -9.624218948438,
+        "neck_diameter_mm": 4.2,
+        "neck_length_mm": 1.5,
+        "main_post_diameter_mm": 7,
+        "through_clearance_diameter_mm": 2.2,
+        "nut_pocket_af_mm": 4.3,
+        "nut_pocket_axial_depth_mm": 2.0,
+        "screw": "M2 x 8, head <=4.0mm diameter and <=1.5mm high",
+        "nut": "M2 hex nut,4.0mm AF,1.6mm thick"
+      },
+      {
+        "index": 2,
+        "source_hole_xy_mm": [
+          -8.366,
+          75.65
+        ],
+        "assembly_axis_xz_mm": [
+          8.366,
+          80.9530767487405
+        ],
+        "contact_seat_y_mm": -9.624218948438,
+        "neck_diameter_mm": 4.2,
+        "neck_length_mm": 1.5,
+        "main_post_diameter_mm": 7,
+        "through_clearance_diameter_mm": 2.2,
+        "nut_pocket_af_mm": 4.3,
+        "nut_pocket_axial_depth_mm": 2.0,
+        "screw": "M2 x 8, head <=4.0mm diameter and <=1.5mm high",
+        "nut": "M2 hex nut,4.0mm AF,1.6mm thick"
+      }
+    ],
+    "buttons": [
+      {
+        "name": "lower",
+        "center_xz_mm": [
+          -0.04308995,
+          37.16513919874049
+        ],
+        "switch_tip_y_mm": -1.6142187000000003,
+        "shaft_diameter_mm": 5.4,
+        "guide_diameter_mm": 6.0,
+        "flange_diameter_mm": 7.8,
+        "flange_top_y_mm": 1.048808,
+        "socket_diameter_mm": 3.9,
+        "nominal_no_preload_gap_mm": 0.15,
+        "surface_proud_mm": 0.2,
+        "rest_bounds_mm": [
+          [
+            -3.9430899620056152,
+            -2.1142187118530273,
+            33.265140533447266
+          ],
+          [
+            3.856909990310669,
+            4.713451385498047,
+            41.06513977050781
+          ]
+        ]
+      },
+      {
+        "name": "upper",
+        "center_xz_mm": [
+          -0.04308995,
+          48.5571641487405
+        ],
+        "switch_tip_y_mm": -1.6142187000000003,
+        "shaft_diameter_mm": 5.4,
+        "guide_diameter_mm": 6.0,
+        "flange_diameter_mm": 7.8,
+        "flange_top_y_mm": 1.7531690000000002,
+        "socket_diameter_mm": 3.9,
+        "nominal_no_preload_gap_mm": 0.15,
+        "surface_proud_mm": 0.2,
+        "rest_bounds_mm": [
+          [
+            -3.9430899620056152,
+            -2.1142187118530273,
+            44.65716552734375
+          ],
+          [
+            3.856909990310669,
+            5.280587673187256,
+            52.4571647644043
+          ]
+        ]
+      }
+    ],
+    "usb_opening": {
+      "width_mm": 12.4,
+      "depth_mm": 7.4,
+      "corner_radius_mm": 0.8,
+      "center_y_mm": -7.974232000000001,
+      "top_z_mm": 5.25
+    },
+    "cn1_relief_margin_mm": 0.45,
+    "display_geometry_unchanged": true,
+    "front_bounds_mm": [
+      [
+        -27.924644470214844,
+        -23.332347869873047,
+        5.127738409934929e-16
+      ],
+      [
+        27.924644470214844,
+        -3.299999952316284,
+        92.0
+      ]
+    ],
+    "back_bounds_mm": [
+      [
+        -21.53862190246582,
+        -9.624218940734863,
+        1.7491674423217773
+      ],
+      [
+        21.53862190246582,
+        5.495889663696289,
+        92.0
+      ]
+    ],
+    "original_front_sha256": "d81f15e8342b1998d0e213940d6567d8fb600bfae0f75b95b1836247647f98f5",
+    "original_back_sha256": "58bfa79a663747a285476c8dc113ac170e32ae4811899fdc37a8a7558f0f6765"
+  },
+  "geometry_checks": {
+    "checks": {
+      "front_valid_mesh": true,
+      "front_single_solid": true,
+      "back_valid_mesh": true,
+      "back_single_solid": true,
+      "pcb_valid_mesh": true,
+      "screws_valid_mesh": true,
+      "nuts_valid_mesh": true,
+      "lower_valid_mesh": true,
+      "lower_single_solid": true,
+      "upper_valid_mesh": true,
+      "upper_single_solid": true,
+      "pcb_front_collision_mm3": true,
+      "pcb_back_collision_mm3": true,
+      "pcb_display_collision_mm3": true,
+      "pcb_screen_hw_collision_mm3": true,
+      "front_back_collision_mm3": true,
+      "pcb_screws_back_collision_mm3": true,
+      "pcb_screws_pcb_collision_mm3": true,
+      "pcb_screws_display_collision_mm3": true,
+      "pcb_screws_screen_hw_collision_mm3": true,
+      "pcb_nuts_back_collision_mm3": true,
+      "pcb_nuts_pcb_collision_mm3": true,
+      "pcb_nuts_screws_collision_mm3": true,
+      "lower_back_collision_mm3": true,
+      "lower_pcb_collision_mm3": true,
+      "lower_front_collision_mm3": true,
+      "lower_display_collision_mm3": true,
+      "lower_screws_collision_mm3": true,
+      "lower_nuts_collision_mm3": true,
+      "lower_plastic_travel_clear": true,
+      "lower_flange_retains_cap": true,
+      "upper_back_collision_mm3": true,
+      "upper_pcb_collision_mm3": true,
+      "upper_front_collision_mm3": true,
+      "upper_display_collision_mm3": true,
+      "upper_screws_collision_mm3": true,
+      "upper_nuts_collision_mm3": true,
+      "upper_plastic_travel_clear": true,
+      "upper_flange_retains_cap": true,
+      "usb_plug_probe_front_collision_mm3": true,
+      "usb_plug_probe_back_collision_mm3": true,
+      "nut_0_can_load": true,
+      "nut_1_can_load": true,
+      "nut_2_can_load": true,
+      "rear_assembly_can_remove": true,
+      "front_changed_above_usb_zone_mm3": true
+    },
+    "passed": 46,
+    "total": 46,
+    "measurements": {
+      "pcb_front_collision_mm3": 0.0,
+      "pcb_back_collision_mm3": 0.0,
+      "pcb_display_collision_mm3": 0.0,
+      "pcb_screen_hw_collision_mm3": 0.0,
+      "front_back_collision_mm3": 3.8602774279685354e-07,
+      "pcb_screws_back_collision_mm3": 0.0,
+      "pcb_screws_pcb_collision_mm3": 0.0,
+      "pcb_screws_display_collision_mm3": 0.0,
+      "pcb_screws_screen_hw_collision_mm3": 0.0,
+      "pcb_nuts_back_collision_mm3": 0.0,
+      "pcb_nuts_pcb_collision_mm3": 0.0,
+      "pcb_nuts_screws_collision_mm3": 2.3684757858670005e-15,
+      "lower_back_collision_mm3": 0.0,
+      "lower_pcb_collision_mm3": 0.0,
+      "lower_front_collision_mm3": 0.0,
+      "lower_display_collision_mm3": 0.0,
+      "lower_screws_collision_mm3": 0.0,
+      "lower_nuts_collision_mm3": 0.0,
+      "lower_plastic_travel_check_mm_mm3": [
+        [
+          -0.6,
+          0.0
+        ],
+        [
+          -0.3,
+          0.0
+        ],
+        [
+          0,
+          0.0
+        ],
+        [
+          0.2,
+          0.0
+        ]
+      ],
+      "lower_outward_retention_collision_mm3": 3.2541810860151315,
+      "upper_back_collision_mm3": 0.0,
+      "upper_pcb_collision_mm3": 0.0,
+      "upper_front_collision_mm3": 0.0,
+      "upper_display_collision_mm3": 0.0,
+      "upper_screws_collision_mm3": 0.0,
+      "upper_nuts_collision_mm3": 0.0,
+      "upper_plastic_travel_check_mm_mm3": [
+        [
+          -0.6,
+          0.0
+        ],
+        [
+          -0.3,
+          0.0
+        ],
+        [
+          0,
+          0.0
+        ],
+        [
+          0.2,
+          0.0
+        ]
+      ],
+      "upper_outward_retention_collision_mm3": 3.965164484288659,
+      "usb_plug_probe_front_collision_mm3": 0.0,
+      "usb_plug_probe_back_collision_mm3": 0.0,
+      "usb_plug_probe_envelope_mm": [
+        12.0,
+        7.0
+      ],
+      "nut_0_loading_path_mm_mm3": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.25,
+          0.0
+        ],
+        [
+          0.5,
+          0.0
+        ],
+        [
+          0.75,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.25,
+          0.0
+        ],
+        [
+          1.5,
+          0.0
+        ],
+        [
+          1.75,
+          0.0
+        ],
+        [
+          2.0,
+          0.0
+        ],
+        [
+          2.25,
+          0.0
+        ],
+        [
+          2.5,
+          0.0
+        ],
+        [
+          2.75,
+          0.0
+        ],
+        [
+          3.0,
+          0.0
+        ],
+        [
+          3.25,
+          0.0
+        ],
+        [
+          3.5,
+          0.0
+        ],
+        [
+          3.75,
+          0.0
+        ],
+        [
+          4.0,
+          0.0
+        ],
+        [
+          4.25,
+          0.0
+        ],
+        [
+          4.5,
+          0.0
+        ],
+        [
+          4.75,
+          0.0
+        ],
+        [
+          5.0,
+          0.0
+        ],
+        [
+          5.25,
+          0.0
+        ],
+        [
+          5.5,
+          0.0
+        ],
+        [
+          5.75,
+          0.0
+        ],
+        [
+          6.0,
+          0.0
+        ]
+      ],
+      "nut_1_loading_path_mm_mm3": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.25,
+          0.0
+        ],
+        [
+          0.5,
+          0.0
+        ],
+        [
+          0.75,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.25,
+          0.0
+        ],
+        [
+          1.5,
+          0.0
+        ],
+        [
+          1.75,
+          0.0
+        ],
+        [
+          2.0,
+          0.0
+        ],
+        [
+          2.25,
+          0.0
+        ],
+        [
+          2.5,
+          0.0
+        ],
+        [
+          2.75,
+          0.0
+        ],
+        [
+          3.0,
+          0.0
+        ],
+        [
+          3.25,
+          0.0
+        ],
+        [
+          3.5,
+          0.0
+        ],
+        [
+          3.75,
+          0.0
+        ],
+        [
+          4.0,
+          0.0
+        ],
+        [
+          4.25,
+          0.0
+        ],
+        [
+          4.5,
+          0.0
+        ],
+        [
+          4.75,
+          0.0
+        ],
+        [
+          5.0,
+          0.0
+        ],
+        [
+          5.25,
+          0.0
+        ],
+        [
+          5.5,
+          0.0
+        ],
+        [
+          5.75,
+          0.0
+        ],
+        [
+          6.0,
+          0.0
+        ]
+      ],
+      "nut_2_loading_path_mm_mm3": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.25,
+          0.0
+        ],
+        [
+          0.5,
+          0.0
+        ],
+        [
+          0.75,
+          0.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.25,
+          0.0
+        ],
+        [
+          1.5,
+          0.0
+        ],
+        [
+          1.75,
+          0.0
+        ],
+        [
+          2.0,
+          0.0
+        ],
+        [
+          2.25,
+          0.0
+        ],
+        [
+          2.5,
+          0.0
+        ],
+        [
+          2.75,
+          0.0
+        ],
+        [
+          3.0,
+          0.0
+        ],
+        [
+          3.25,
+          0.0
+        ],
+        [
+          3.5,
+          0.0
+        ],
+        [
+          3.75,
+          0.0
+        ],
+        [
+          4.0,
+          0.0
+        ],
+        [
+          4.25,
+          0.0
+        ],
+        [
+          4.5,
+          0.0
+        ],
+        [
+          4.75,
+          0.0
+        ],
+        [
+          5.0,
+          0.0
+        ],
+        [
+          5.25,
+          0.0
+        ],
+        [
+          5.5,
+          0.0
+        ],
+        [
+          5.75,
+          0.0
+        ],
+        [
+          6.0,
+          0.0
+        ]
+      ],
+      "rear_assembly_removal_y_mm_and_collisions_mm3": [
+        [
+          0.0,
+          3.8609245051057783e-07,
+          0.0,
+          0.0
+        ],
+        [
+          0.5,
+          8.661837227172398e-05,
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          1.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          2.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          2.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          3.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          3.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          4.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          4.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          5.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          5.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          6.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          6.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          7.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          7.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          8.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          8.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          9.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          9.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          10.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          10.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          11.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          11.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          12.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          12.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          13.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          13.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          14.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          14.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          15.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          15.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          16.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          16.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          17.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          17.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          18.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          18.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          19.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          19.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          20.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          20.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          21.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          21.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          22.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          22.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          23.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          23.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          24.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          24.5,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          25.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "front_changed_above_usb_zone_mm3": 0.0,
+      "front_sha256": "173de8fad74141476b5a1a8b8a0cd319db884d16644a1b073674dfb48f71bb7d",
+      "back_sha256": "f70d72a271cc969a93cac78b4c01995560cb28506bdd6afeed6d7488a59e8cba"
+    },
+    "model_coverage_note": "H1 and connected cables/plugs absent; USB clearance checks a stated geometric envelope, not every cable."
+  },
+  "exports": {
+    "front": {
+      "step_valid_single_closed_solid": true,
+      "step_roundtrip_volume_delta_mm3": 1.328407961409539e-08,
+      "step_cleanup_collapsed_edges": 0,
+      "step_cleanup_volume_delta_mm3": 0.0,
+      "print_stl_watertight_single_solid": true,
+      "print_roundtrip_volume_delta_mm3": 0.0013547284015658079,
+      "print_degenerate_faces_removed": 4,
+      "bed_contact_mm2": 416.1410355393349,
+      "print_bounds_mm": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          55.84928894042969,
+          92.0,
+          20.0323486328125
+        ]
+      ],
+      "step_type": "Faceted solid without parametric history",
+      "source_sha256": "173de8fad74141476b5a1a8b8a0cd319db884d16644a1b073674dfb48f71bb7d"
+    },
+    "back": {
+      "step_valid_single_closed_solid": true,
+      "step_roundtrip_volume_delta_mm3": 1.8717400962486863e-09,
+      "step_cleanup_collapsed_edges": 0,
+      "step_cleanup_volume_delta_mm3": 0.0,
+      "print_stl_watertight_single_solid": true,
+      "print_roundtrip_volume_delta_mm3": 0.00028030558132741135,
+      "print_degenerate_faces_removed": 0,
+      "bed_contact_mm2": 30.13776678639988,
+      "print_bounds_mm": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          43.07724380493164,
+          90.2508316040039,
+          15.120108604431152
+        ]
+      ],
+      "step_type": "Faceted solid without parametric history",
+      "source_sha256": "f70d72a271cc969a93cac78b4c01995560cb28506bdd6afeed6d7488a59e8cba"
+    },
+    "lower_button": {
+      "step_valid_single_closed_solid": true,
+      "step_roundtrip_volume_delta_mm3": 7.105427357601002e-13,
+      "step_cleanup_collapsed_edges": 0,
+      "step_cleanup_volume_delta_mm3": 0.0,
+      "print_stl_watertight_single_solid": true,
+      "print_roundtrip_volume_delta_mm3": 3.975125451916028e-06,
+      "print_degenerate_faces_removed": 0,
+      "bed_contact_mm2": 10.948485023115381,
+      "print_bounds_mm": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          7.800000190734863,
+          7.799999237060547,
+          6.827670097351074
+        ]
+      ],
+      "step_type": "Faceted solid without parametric history",
+      "source_sha256": "f3775f3a3c8f0d3dae2c611d8d86aad76dcf05814ab3c6c1ea9e6ca27642bb62"
+    },
+    "upper_button": {
+      "step_valid_single_closed_solid": true,
+      "step_roundtrip_volume_delta_mm3": 1.0771827874123119e-11,
+      "step_cleanup_collapsed_edges": 0,
+      "step_cleanup_volume_delta_mm3": 0.0,
+      "print_stl_watertight_single_solid": true,
+      "print_roundtrip_volume_delta_mm3": 4.597851358312255e-06,
+      "print_degenerate_faces_removed": 0,
+      "bed_contact_mm2": 10.948483900234123,
+      "print_bounds_mm": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          7.800000190734863,
+          7.799999237060547,
+          7.394806385040283
+        ]
+      ],
+      "step_type": "Faceted solid without parametric history",
+      "source_sha256": "25e93f5407681059ee6611461702b44ea7b03cc00f04d1ad97667b124d99e110"
+    }
+  },
+  "file_sha256": {
+    "MAICA_EVE_PCBFit_Front.step": "2efd52430511e8f50a43fb5900cf19f293ac39a85b007230f11c8c2976c9cd54",
+    "MAICA_EVE_PCBFit_Front_Print.stl": "d3916e3777e48beb61d14ab62399a588f9bdc3953d3366c7449c2bcbe3a51024",
+    "MAICA_EVE_PCBFit_Back.step": "4ee58c64503e8dbe4a6da41eff58a41477247a60e90fd3db1ee2f6273f6db0e9",
+    "MAICA_EVE_PCBFit_Back_Print.stl": "d5cc9b23824d35ac9485b38f1f3ec6feea9aa50f8cbd7a3c8be1478a6913e8a5",
+    "MAICA_EVE_PCBFit_Upper_Button.step": "278bbad2fe5154c5906519bb4b44818b5b11641317811ee68dbb17dba13f1080",
+    "MAICA_EVE_PCBFit_Upper_Button_Print.stl": "00ab6298d1e8e7eb357c88046651907b21d768c4050d5e59de58be54a9d54d92",
+    "MAICA_EVE_PCBFit_Lower_Button.step": "0b0e0aedb801003d440c604de789143befa7104eea5887ca69c12af3c4396875",
+    "MAICA_EVE_PCBFit_Lower_Button_Print.stl": "65ebca5e5dc54ebc7b4de85b98a1e6d8c3d318dcb5dbcc072c0c495988665243",
+    "MAICA_EVE_PCBFit_Preview.png": "0b72722fe4976585320aa49edee3cbf3ad2a31724a36969b86aa7294ead05e85",
+    "MAICA_EVE_PCBFit_Readme.md": "bd04a57b2d1834280d873501679dfecf72b62bf561e2350897e58b732f696445"
+  }
+}

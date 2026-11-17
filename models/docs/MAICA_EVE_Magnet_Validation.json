@@ -1,0 +1,2607 @@
+{
+  "design": {
+    "source_front": "work\\onshape_compat_cache\\Front.ply",
+    "source_sha256": "83300824cd55d7017fe40d4614f70689324fdf8e9d690627437301f1f187d772",
+    "magnet_nominal_diameter_mm": 25.4,
+    "magnet_nominal_thickness_mm": 4.7625,
+    "magnet_tolerance_mm": 0.1,
+    "axis_xz_mm": [
+      0.0,
+      25.0
+    ],
+    "floor_y_mm": -18.71993957,
+    "pocket_depth_mm": 5.05,
+    "mouth_y_mm": -13.66993957,
+    "bore_diameter_mm": 25.7,
+    "holder_outer_diameter_mm": 29.7,
+    "holder_radial_wall_mm": 2.0,
+    "lead_in_axial_mm": 0.4,
+    "lead_in_radial_mm": 0.4,
+    "rib_count": 3,
+    "rib_effective_diameter_mm": 25.2,
+    "rib_tangential_width_mm": 0.7,
+    "rib_full_interference_contact_length_mm": 3.75,
+    "magnet_nominal_recess_below_mouth_mm": 0.28749999999999964,
+    "back_changed": false,
+    "geometry_type": "Faceted shell with internal conforming magnet holder",
+    "parts": {
+      "front_faces": 34990,
+      "front_single_watertight_solid": true,
+      "front_bounds_mm": [
+        [
+          -27.924644470214844,
+          -23.332347869873047,
+          5.127738409934929e-16
+        ],
+        [
+          27.924644470214844,
+          -3.299999952316284,
+          92.0
+        ]
+      ]
+    },
+    "physical_press_fit_and_holding_force_tested": false
+  },
+  "geometry_checks": {
+    "checks": {
+      "front_valid_single_solid": true,
+      "overall_bounds_delta_mm": true,
+      "new_material_outside_pocket_residual_mm3": true,
+      "removed_material_outside_pocket_residual_mm3": true,
+      "front_pcb_intersection_mm3": true,
+      "nominal_magnet_pcb_intersection_mm3": true,
+      "front_pcb_screws_intersection_mm3": true,
+      "nominal_magnet_pcb_screws_intersection_mm3": true,
+      "front_pcb_nuts_intersection_mm3": true,
+      "nominal_magnet_pcb_nuts_intersection_mm3": true,
+      "front_back_intersection_mm3": true,
+      "nominal_magnet_back_intersection_mm3": true,
+      "front_display_intersection_mm3": true,
+      "nominal_magnet_display_intersection_mm3": true,
+      "front_display_hardware_intersection_mm3": true,
+      "nominal_magnet_display_hardware_intersection_mm3": true,
+      "front_upper_button_intersection_mm3": true,
+      "nominal_magnet_upper_button_intersection_mm3": true,
+      "front_lower_button_intersection_mm3": true,
+      "nominal_magnet_lower_button_intersection_mm3": true,
+      "magnet_0p5_clearance_pcb_intersection_mm3": true,
+      "holder_0p5_clearance_pcb_intersection_mm3": true,
+      "magnet_0p5_clearance_pcb_screws_intersection_mm3": true,
+      "holder_0p5_clearance_pcb_screws_intersection_mm3": true,
+      "magnet_0p5_clearance_pcb_nuts_intersection_mm3": true,
+      "holder_0p5_clearance_pcb_nuts_intersection_mm3": true,
+      "magnet_0p5_clearance_back_intersection_mm3": true,
+      "holder_0p5_clearance_back_intersection_mm3": true,
+      "magnet_0p5_clearance_display_intersection_mm3": true,
+      "holder_0p5_clearance_display_intersection_mm3": true,
+      "magnet_0p5_clearance_display_hardware_intersection_mm3": true,
+      "holder_0p5_clearance_display_hardware_intersection_mm3": true,
+      "magnet_0p5_clearance_upper_button_intersection_mm3": true,
+      "holder_0p5_clearance_upper_button_intersection_mm3": true,
+      "magnet_0p5_clearance_lower_button_intersection_mm3": true,
+      "holder_0p5_clearance_lower_button_intersection_mm3": true,
+      "nominal_magnet_contact_only_retention_ribs": true,
+      "tolerance_magnet_contact_only_retention_ribs": true,
+      "front_exterior_first_surface_sample_delta_mm": true,
+      "side_exterior_sample_delta_mm": true,
+      "outside_pocket_symmetric_sampled_surface_delta_mm": true,
+      "minimum_sampled_exterior_skin_mm": true,
+      "new_features_rear_assembly_removal_clearance_mm": true,
+      "baseline_rear_removal_path_passed": true,
+      "final_rear_removal_path_intersections_mm3": true
+    },
+    "passed": 45,
+    "total": 45,
+    "measurements": {
+      "front_valid_single_solid": {
+        "watertight": true,
+        "solid_count": 1
+      },
+      "overall_bounds_delta_mm": 0.0,
+      "new_material_outside_pocket_residual_mm3": 0.0002681248713747806,
+      "removed_material_outside_pocket_residual_mm3": 0.0008864158740510425,
+      "front_pcb_intersection_mm3": 0.0,
+      "nominal_magnet_pcb_intersection_mm3": 0.0,
+      "front_pcb_screws_intersection_mm3": 0.0,
+      "nominal_magnet_pcb_screws_intersection_mm3": 0.0,
+      "front_pcb_nuts_intersection_mm3": 0.0,
+      "nominal_magnet_pcb_nuts_intersection_mm3": 0.0,
+      "front_back_intersection_mm3": 3.8577344334267405e-07,
+      "nominal_magnet_back_intersection_mm3": 0.0,
+      "front_display_intersection_mm3": 4.888272878383719e-15,
+      "nominal_magnet_display_intersection_mm3": 0.0,
+      "front_display_hardware_intersection_mm3": 0.0,
+      "nominal_magnet_display_hardware_intersection_mm3": 0.0,
+      "front_upper_button_intersection_mm3": 0.0,
+      "nominal_magnet_upper_button_intersection_mm3": 0.0,
+      "front_lower_button_intersection_mm3": 0.0,
+      "nominal_magnet_lower_button_intersection_mm3": 0.0,
+      "magnet_0p5_clearance_pcb_intersection_mm3": 0.0,
+      "holder_0p5_clearance_pcb_intersection_mm3": 0.0,
+      "magnet_0p5_clearance_pcb_screws_intersection_mm3": 0.0,
+      "holder_0p5_clearance_pcb_screws_intersection_mm3": 0.0,
+      "magnet_0p5_clearance_pcb_nuts_intersection_mm3": 0.0,
+      "holder_0p5_clearance_pcb_nuts_intersection_mm3": 0.0,
+      "magnet_0p5_clearance_back_intersection_mm3": 0.0,
+      "holder_0p5_clearance_back_intersection_mm3": 0.0,
+      "magnet_0p5_clearance_display_intersection_mm3": 0.0,
+      "holder_0p5_clearance_display_intersection_mm3": 0.0,
+      "magnet_0p5_clearance_display_hardware_intersection_mm3": 0.0,
+      "holder_0p5_clearance_display_hardware_intersection_mm3": 0.0,
+      "magnet_0p5_clearance_upper_button_intersection_mm3": 0.0,
+      "holder_0p5_clearance_upper_button_intersection_mm3": 0.0,
+      "magnet_0p5_clearance_lower_button_intersection_mm3": 0.0,
+      "holder_0p5_clearance_lower_button_intersection_mm3": 0.0,
+      "nominal_magnet_contact_only_retention_ribs": {
+        "total_interference_mm3": 0.8081130459142691,
+        "outside_ribs_interference_mm3": 2.4198114686365315e-08
+      },
+      "tolerance_magnet_contact_only_retention_ribs": {
+        "total_interference_mm3": 1.2510579050992623,
+        "outside_ribs_interference_mm3": 5.198174861552043e-08
+      },
+      "front_exterior_first_surface_sample_delta_mm": {
+        "max_delta": 0.0,
+        "samples": 3574,
+        "presence_errors": []
+      },
+      "side_exterior_sample_delta_mm": {
+        "max_delta": 0.0,
+        "samples": 4616,
+        "presence_errors": []
+      },
+      "outside_pocket_symmetric_sampled_surface_delta_mm": {
+        "original_to_final": 0.0011579665999538718,
+        "final_to_original": 0.0004698725601410119
+      },
+      "minimum_sampled_exterior_skin_mm": {
+        "distance": 1.064594057197973,
+        "point": [
+          -12.112943160534492,
+          -18.71993957,
+          20.710581858846044
+        ],
+        "samples": 15840
+      },
+      "new_features_rear_assembly_removal_clearance_mm": 0.5427206292651352,
+      "baseline_rear_removal_path_passed": true,
+      "final_rear_removal_path_intersections_mm3": [
+        [
+          0,
+          3.8577344334267405e-07,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.1,
+          4.021851807124616e-06,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.25,
+          3.1571021456772096e-05,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.5,
+          8.661782857299316e-05,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          1,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          2,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          5,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          10,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          25,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      ]
+    },
+    "source_mesh": "work/eve_magnet/front_clean.ply",
+    "source_mesh_sha256": "1765ba46c0073412546cf932eb5543dc7d35058406fe6f873bb6f2cebcd14785",
+    "baseline_front_sha256": "83300824cd55d7017fe40d4614f70689324fdf8e9d690627437301f1f187d772",
+    "notes": [
+      "Exterior and wall thickness are dense sampled checks, not an analytic global Hausdorff proof.",
+      "Removal for the added features is a globalYseparation proof, combinedwith earlier validated baseline removalpath and9actualfinalpath samples. Deliberate compliant dimplebumps are excludedfrom movingrearcover.",
+      "Microscopic cleanup is permitted up to0.003mm outsidepocket; residualBooleanvolume is recorded ratherthan treating sliverbbox as materialfeatureextent.",
+      "Pressfit requires intentional crushrib deformation; physical retention and magnet holding force have not been tested."
+    ]
+  },
+  "front_export": {
+    "source": "work/eve_magnet_front_final.ply",
+    "source_sha256": "0123bfbb62cbba45875b2a0ce26e8a11e46056e835dd7b421548fb20e5ecc4c7",
+    "cleaned_triangles": 34928,
+    "collapsed_short_edges": 0,
+    "sampled_surface_delta_mm": 0.0011579665999538718,
+    "cleanup_volume_delta_mm3": 0.00035580670737545006,
+    "brep_faces": 31147,
+    "minimum_brep_edge_mm": 0.001020419931791603,
+    "step_valid_single_closed_solid": true,
+    "step_roundtrip_volume_delta_mm3": 1.1841621017083526e-08,
+    "step_bytes": 82404602,
+    "print_stl_watertight_single_solid": true,
+    "print_orientation": "Mating rim down, -90 degrees about assembly X, translated onto print bed",
+    "print_bed_contact_mm2": 416.1410355393349,
+    "print_bounds_mm": [
+      [
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        55.84928894042969,
+        92.0,
+        20.0323486328125
+      ]
+    ]
+  },
+  "assembly_export": {
+    "file": "outputs\\MAICA_EVE_Magnet_Onshape_Assembly.step",
+    "bytes": 274725622,
+    "sha256": "b0b010b398285b96ac2f038031dfb8beac0383c47fcf6dc710dbd62c71cd5d30",
+    "all_checks_passed": true,
+    "leaf_count": 101,
+    "solid_count": 341,
+    "max_roundtrip_bounds_delta_mm": 9.393374966748524e-12,
+    "max_roundtrip_volume_delta_mm3": 9.760317598761503e-05,
+    "magnet": {
+      "source_front": "work\\onshape_compat_cache\\Front.ply",
+      "source_sha256": "83300824cd55d7017fe40d4614f70689324fdf8e9d690627437301f1f187d772",
+      "magnet_nominal_diameter_mm": 25.4,
+      "magnet_nominal_thickness_mm": 4.7625,
+      "magnet_tolerance_mm": 0.1,
+      "axis_xz_mm": [
+        0.0,
+        25.0
+      ],
+      "floor_y_mm": -18.71993957,
+      "pocket_depth_mm": 5.05,
+      "mouth_y_mm": -13.66993957,
+      "bore_diameter_mm": 25.7,
+      "holder_outer_diameter_mm": 29.7,
+      "holder_radial_wall_mm": 2.0,
+      "lead_in_axial_mm": 0.4,
+      "lead_in_radial_mm": 0.4,
+      "rib_count": 3,
+      "rib_effective_diameter_mm": 25.2,
+      "rib_tangential_width_mm": 0.7,
+      "rib_full_interference_contact_length_mm": 3.75,
+      "magnet_nominal_recess_below_mouth_mm": 0.28749999999999964,
+      "back_changed": false,
+      "geometry_type": "Faceted shell with internal conforming magnet holder",
+      "parts": {
+        "front_faces": 34990,
+        "front_single_watertight_solid": true,
+        "front_bounds_mm": [
+          [
+            -27.924644470214844,
+            -23.332347869873047,
+            5.127738409934929e-16
+          ],
+          [
+            27.924644470214844,
+            -3.299999952316284,
+            92.0
+          ]
+        ]
+      },
+      "physical_press_fit_and_holding_force_tested": false
+    },
+    "cloud_import_verified": false,
+    "leaves": [
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Front_Shell",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -27.924644470213757,
+            -23.332347869870933,
+            5.127738409935e-16
+          ],
+          [
+            27.924644470215032,
+            -3.2999999523147467,
+            92.0
+          ]
+        ],
+        "volume_mm3": 16660.70932612457,
+        "bounds_delta_mm": 2.113864638886298e-12,
+        "volume_delta_mm3": 1.195803633891046e-08
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Display_PCB",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -18.027617755747425,
+            -16.500000000000004,
+            40.84776320708399
+          ],
+          [
+            18.040867113642225,
+            -14.929999999999993,
+            83.0117648519246
+          ]
+        ],
+        "volume_mm3": 1938.4135501426722,
+        "bounds_delta_mm": 3.055333763768431e-13,
+        "volume_delta_mm3": 1.2641976354643703e-10
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Module_Component_01",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -14.8423753210526,
+            -14.929999999999998,
+            61.11976320708399
+          ],
+          [
+            -13.5923753210526,
+            -13.929999999999998,
+            63.11976320708399
+          ]
+        ],
+        "volume_mm3": 2.4961024000000016,
+        "bounds_delta_mm": 2.984279490192421e-13,
+        "volume_delta_mm3": 4.440892098500626e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Module_Component_02",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            9.9286246789474,
+            -14.930000000000003,
+            71.78276320708399
+          ],
+          [
+            11.9286246789474,
+            -13.930000000000003,
+            73.032763207084
+          ]
+        ],
+        "volume_mm3": 2.4961024000000025,
+        "bounds_delta_mm": 2.984279490192421e-13,
+        "volume_delta_mm3": 5.329070518200751e-15
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Module_Component_03",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -11.7883753210526,
+            -14.929999999999998,
+            59.590763207083995
+          ],
+          [
+            -9.7883753210526,
+            -13.929999999999998,
+            60.840763207083995
+          ]
+        ],
+        "volume_mm3": 2.496102400000002,
+        "bounds_delta_mm": 2.984279490192421e-13,
+        "volume_delta_mm3": 1.3322676295501878e-15
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Module_Component_04",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            11.7296246789474,
+            -14.93,
+            53.116263207083996
+          ],
+          [
+            12.539624678947401,
+            -14.549999999999999,
+            54.741263207083996
+          ]
+        ],
+        "volume_mm3": 0.4988814000000004,
+        "bounds_delta_mm": 2.984279490192421e-13,
+        "volume_delta_mm3": 1.1657341758564144e-15
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Module_Component_05",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            5.8246246789474,
+            -14.93,
+            53.30726320708399
+          ],
+          [
+            6.634624678947401,
+            -14.549999999999997,
+            54.93226320708399
+          ]
+        ],
+        "volume_mm3": 0.49888140000000103,
+        "bounds_delta_mm": 2.984279490192421e-13,
+        "volume_delta_mm3": 6.106226635438361e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Module_Component_06",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            9.8886246789474,
+            -14.93,
+            53.17926320708399
+          ],
+          [
+            10.698624678947402,
+            -14.549999999999999,
+            54.804263207084
+          ]
+        ],
+        "volume_mm3": 0.4988814000000014,
+        "bounds_delta_mm": 3.055333763768431e-13,
+        "volume_delta_mm3": 1.6653345369377348e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Module_Component_07",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            7.8566246789474,
+            -14.93,
+            53.17926320708399
+          ],
+          [
+            8.666624678947402,
+            -14.549999999999997,
+            54.80426320708399
+          ]
+        ],
+        "volume_mm3": 0.49888140000000136,
+        "bounds_delta_mm": 2.984279490192421e-13,
+        "volume_delta_mm3": 1.6653345369377348e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Module_Component_08",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            0.33712467894739945,
+            -14.930000000000003,
+            71.36676320708399
+          ],
+          [
+            1.9621246789473998,
+            -14.55,
+            72.176763207084
+          ]
+        ],
+        "volume_mm3": 0.49888140000000203,
+        "bounds_delta_mm": 2.984279490192421e-13,
+        "volume_delta_mm3": 8.881784197001252e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Module_Component_09",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            10.2431246789474,
+            -14.930000000000003,
+            73.780763207084
+          ],
+          [
+            11.8681246789474,
+            -14.550000000000002,
+            74.590763207084
+          ]
+        ],
+        "volume_mm3": 0.4988814000000007,
+        "bounds_delta_mm": 2.984279490192421e-13,
+        "volume_delta_mm3": 3.3306690738754696e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Module_Component_10",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -11.6008753210526,
+            -14.929999999999998,
+            58.032763207083995
+          ],
+          [
+            -9.9758753210526,
+            -14.549999999999997,
+            58.842763207084
+          ]
+        ],
+        "volume_mm3": 0.49888140000000164,
+        "bounds_delta_mm": 3.055333763768431e-13,
+        "volume_delta_mm3": 8.881784197001252e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Module_Component_11",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            3.248624678946961,
+            -14.930000000000003,
+            71.531763207084
+          ],
+          [
+            6.2886246789474,
+            -13.809999999999947,
+            74.171763207084
+          ]
+        ],
+        "volume_mm3": 4.41363522916381,
+        "bounds_delta_mm": 5.893063814710331e-13,
+        "volume_delta_mm3": 2.7711166694643907e-13
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Module_Component_12",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -4.933375321052601,
+            -14.930000000000001,
+            70.442763207084
+          ],
+          [
+            -2.2933753210526002,
+            -13.809999999999947,
+            73.48276320708443
+          ]
+        ],
+        "volume_mm3": 4.413635229163811,
+        "bounds_delta_mm": 3.126388037344441e-13,
+        "volume_delta_mm3": 2.708944180085382e-13
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Module_Component_13",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -7.9210231560786,
+            -14.930000000000206,
+            59.27030533440466
+          ],
+          [
+            -2.9210231560785993,
+            -14.254999999999999,
+            60.382070040287
+          ]
+        ],
+        "volume_mm3": 0.5273165061710231,
+        "bounds_delta_mm": 2.078337502098293e-13,
+        "volume_delta_mm3": 3.8824499171141724e-13
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Module_Component_14",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -7.9210231560786,
+            -14.930000000000208,
+            64.758540628522
+          ],
+          [
+            -2.9210231560785997,
+            -14.254999999999999,
+            65.87030533440499
+          ]
+        ],
+        "volume_mm3": 0.5273165061710989,
+        "bounds_delta_mm": 5.115907697472721e-13,
+        "volume_delta_mm3": 4.630740235711528e-13
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Module_Component_15",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -7.921023156078601,
+            -14.780000000000001,
+            60.370305334404854
+          ],
+          [
+            -2.9210231560785984,
+            -13.729999999999997,
+            64.77030533440515
+          ]
+        ],
+        "volume_mm3": 22.6733137359916,
+        "bounds_delta_mm": 6.821210263296962e-13,
+        "volume_delta_mm3": 6.608047442568932e-13
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/LCD_Housing",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -17.799999999999986,
+            -18.230000000000008,
+            44.20000000000399
+          ],
+          [
+            17.800000000000015,
+            -16.62999999999999,
+            82.80000000000032
+          ]
+        ],
+        "volume_mm3": 1653.7834547520329,
+        "bounds_delta_mm": 3.90087961932295e-12,
+        "volume_delta_mm3": 4.547473508864641e-12
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/LCD_Front_Film",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -16.199999999999985,
+            -18.25540000000001,
+            48.800000000000324
+          ],
+          [
+            16.200000000000014,
+            -18.2299999999998,
+            81.20000000000033
+          ]
+        ],
+        "volume_mm3": 20.80680620984365,
+        "bounds_delta_mm": 2.984279490192421e-13,
+        "volume_delta_mm3": 8.119727112898545e-11
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/LCD_Flex",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -5.699999999999601,
+            -18.132820578843997,
+            43.775312940148
+          ],
+          [
+            5.700000000000404,
+            -16.499999999999986,
+            54.91372188685399
+          ]
+        ],
+        "volume_mm3": 18.60756908256566,
+        "bounds_delta_mm": 9.393374966748524e-12,
+        "volume_delta_mm3": 5.182343443266291e-11
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/EyeSPI_Connector",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -6.643375321052602,
+            -14.930000000000069,
+            75.167763207084
+          ],
+          [
+            6.6566246789474,
+            -13.180000000000001,
+            80.917763207084
+          ]
+        ],
+        "volume_mm3": 82.60395005195868,
+        "bounds_delta_mm": 3.268496584496461e-13,
+        "volume_delta_mm3": 1.3216094885137863e-12
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/Module_Component_20",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -12.4793753210526,
+            -14.93,
+            61.57276320708341
+          ],
+          [
+            -9.4793753210526,
+            -13.529999999999895,
+            64.57276320708468
+          ]
+        ],
+        "volume_mm3": 6.331066134766526,
+        "bounds_delta_mm": 2.984279490192421e-13,
+        "volume_delta_mm3": 1.7763568394002505e-14
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Round_TFT_6178/microSD_Socket",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -0.037375321052606124,
+            -14.930000000000001,
+            56.403763207084
+          ],
+          [
+            15.162624678947404,
+            -13.049999999999812,
+            70.50376320708403
+          ]
+        ],
+        "volume_mm3": 182.11891106473047,
+        "bounds_delta_mm": 3.268496584496461e-13,
+        "volume_delta_mm3": 9.760317598761503e-05
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Display_Mounting_Hardware/Display_M2x8_Screw_1",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            9.336624678947,
+            -21.75,
+            45.097763207084
+          ],
+          [
+            13.536624678947,
+            -12.15,
+            49.297763207084
+          ]
+        ],
+        "volume_mm3": 47.2998189924476,
+        "bounds_delta_mm": 3.9968028886505635e-13,
+        "volume_delta_mm3": 3.410605131648481e-13
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Display_Mounting_Hardware/Display_M2_Nut_1",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            9.127223602188373,
+            -14.93,
+            45.197763207084
+          ],
+          [
+            13.746025755706627,
+            -13.33,
+            49.197763207084
+          ]
+        ],
+        "volume_mm3": 17.04266847140123,
+        "bounds_delta_mm": 7.247535904753022e-13,
+        "volume_delta_mm3": 2.7178259642823832e-12
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Display_Mounting_Hardware/Display_M2x8_Screw_2",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -13.52337532105,
+            -21.75,
+            45.097763207084
+          ],
+          [
+            -9.323375321050001,
+            -12.15,
+            49.297763207084
+          ]
+        ],
+        "volume_mm3": 47.2998189924476,
+        "bounds_delta_mm": 2.5988100560425664e-12,
+        "volume_delta_mm3": 3.410605131648481e-13
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Display_Mounting_Hardware/Display_M2_Nut_2",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -13.73277639781,
+            -14.93,
+            45.19776320708393
+          ],
+          [
+            -9.113974244291123,
+            -13.33,
+            49.197763207084
+          ]
+        ],
+        "volume_mm3": 17.042668471402823,
+        "bounds_delta_mm": 2.9736213491560193e-12,
+        "volume_delta_mm3": 4.305888978706207e-12
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Front_Display/Magnet_1in_x_3_16in_N52",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -12.7,
+            -18.71993957,
+            12.3
+          ],
+          [
+            12.7,
+            -13.95743957,
+            37.7
+          ]
+        ],
+        "volume_mm3": 2413.194369201834,
+        "bounds_delta_mm": 1.7763568394002505e-15,
+        "volume_delta_mm3": 9.094947017729282e-13
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Back_Shell",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -21.53862190246,
+            -9.624218940735025,
+            1.7491674423217518
+          ],
+          [
+            21.538621902466,
+            5.495889663696689,
+            92.0
+          ]
+        ],
+        "volume_mm3": 10377.1443583304,
+        "bounds_delta_mm": 5.8193450058752205e-12,
+        "volume_delta_mm3": 1.6170815797522664e-09
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Upper_Button_Cap",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -3.9430899620060034,
+            -2.114218711853,
+            44.65716552734337
+          ],
+          [
+            3.856909990311,
+            5.280587673187005,
+            52.45716476440464
+          ]
+        ],
+        "volume_mm3": 194.83249193018543,
+        "bounds_delta_mm": 3.863576125695545e-13,
+        "volume_delta_mm3": 1.1311840353300795e-11
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Lower_Button_Cap",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -3.9430899620061517,
+            -2.114218711853,
+            33.265140533446896
+          ],
+          [
+            3.8569099903112987,
+            4.71345138549812,
+            41.065139770508424
+          ]
+        ],
+        "volume_mm3": 180.47165622316547,
+        "bounds_delta_mm": 6.270539643082884e-13,
+        "volume_delta_mm3": 9.237055564881302e-12
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/PCB_Board_3_Mounting_Holes",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -19.026642038132007,
+            -11.25000000000002,
+            5.3157767741400495
+          ],
+          [
+            19.031917882844,
+            -9.624218948438,
+            84.490534203655
+          ]
+        ],
+        "volume_mm3": 3926.277774913996,
+        "bounds_delta_mm": 5.115907697472721e-13,
+        "volume_delta_mm3": 1.268745108973235e-10
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/CN1_0",
+        "solids": 14,
+        "shells": 14,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            9.418021230859999,
+            -13.12421915728225,
+            31.941634301698
+          ],
+          [
+            14.018021330849999,
+            -3.6242190572806097,
+            37.942634401698
+          ]
+        ],
+        "volume_mm3": 79.60578208904393,
+        "bounds_delta_mm": 9.00612917575927e-12,
+        "volume_delta_mm3": 2.1017854123783763e-10
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/Q3_0",
+        "solids": 20,
+        "shells": 20,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            8.539661657623999,
+            -9.624218547564006,
+            27.116198314983
+          ],
+          [
+            11.352428766549998,
+            -7.974279849233006,
+            30.016198514982
+          ]
+        ],
+        "volume_mm3": 7.1130165026615115,
+        "bounds_delta_mm": 6.0040861171728466e-12,
+        "volume_delta_mm3": 1.765698698363849e-12
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/U4_0",
+        "solids": 20,
+        "shells": 20,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            3.9731330440259978,
+            -9.624218341844006,
+            27.039323620673
+          ],
+          [
+            6.765957634155998,
+            -7.985977708175005,
+            29.918762820672
+          ]
+        ],
+        "volume_mm3": 6.962792780038393,
+        "bounds_delta_mm": 4.938272013532696e-13,
+        "volume_delta_mm3": 1.8829382497642655e-13
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/Q1_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -11.490020320040003,
+            -9.624218948439006,
+            35.320137862862
+          ],
+          [
+            -8.690020320042004,
+            -8.524218948438005,
+            38.220138062861
+          ]
+        ],
+        "volume_mm3": 4.557640790118101,
+        "bounds_delta_mm": 5.044853423896711e-13,
+        "volume_delta_mm3": 3.246333069029106e-08
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/Q2_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -12.557023114045002,
+            -9.624218948439005,
+            31.663129988848
+          ],
+          [
+            -9.757023114047001,
+            -8.524218948438005,
+            34.563130188847
+          ]
+        ],
+        "volume_mm3": 4.557640790118098,
+        "bounds_delta_mm": 5.044853423896711e-13,
+        "volume_delta_mm3": 3.246333157846948e-08
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/Q4_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -7.630012700024005,
+            -9.62421894843901,
+            49.77716859692399
+          ],
+          [
+            -4.830012700026003,
+            -8.524218948438008,
+            52.677168796923
+          ]
+        ],
+        "volume_mm3": 4.55764079011811,
+        "bounds_delta_mm": 4.973799150320701e-13,
+        "volume_delta_mm3": 3.246332536122054e-08
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/U5_0",
+        "solids": 19,
+        "shells": 19,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            6.325699081868998,
+            -9.624219151651008,
+            37.139129480845995
+          ],
+          [
+            9.338303966136996,
+            -8.374135851866008,
+            40.039129680845
+          ]
+        ],
+        "volume_mm3": 5.114734545013027,
+        "bounds_delta_mm": 5.044853423896711e-13,
+        "volume_delta_mm3": 3.312905505481467e-13
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C2_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            14.686029972059996,
+            -9.624219048437011,
+            52.963173168933
+          ],
+          [
+            16.286029972059996,
+            -8.824218848438013,
+            53.763173368932996
+          ]
+        ],
+        "volume_mm3": 0.9906815108535456,
+        "bounds_delta_mm": 5.115907697472721e-13,
+        "volume_delta_mm3": 1.1124005272478144e-08
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C7_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            13.835029110049994,
+            -9.624219048437011,
+            45.247989118564995
+          ],
+          [
+            14.63502931005,
+            -8.82421884843801,
+            46.847989118565
+          ]
+        ],
+        "volume_mm3": 0.9906815108526136,
+        "bounds_delta_mm": 8.00959298885573e-12,
+        "volume_delta_mm3": 1.1123072352070551e-08
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C8_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            8.597205894411998,
+            -9.62421904843701,
+            45.44743539745699
+          ],
+          [
+            9.397206094411995,
+            -8.82421884843801,
+            47.047435397457
+          ]
+        ],
+        "volume_mm3": 0.9906815108514684,
+        "bounds_delta_mm": 4.973799150320701e-13,
+        "volume_delta_mm3": 1.1121927045998348e-08
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/D1_0",
+        "solids": 18,
+        "shells": 18,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -7.552011784023003,
+            -9.624218648798006,
+            34.762802276664
+          ],
+          [
+            -4.552011584024003,
+            -8.524194848409007,
+            37.075472125058
+          ]
+        ],
+        "volume_mm3": 3.9640408980249564,
+        "bounds_delta_mm": 5.044853423896711e-13,
+        "volume_delta_mm3": 3.064215547965432e-14
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C10_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            4.912009044017996,
+            -9.624219048438007,
+            37.733142788871994
+          ],
+          [
+            5.412009244018,
+            -9.124218848438009,
+            38.733142788872
+          ]
+        ],
+        "volume_mm3": 0.23927570639146173,
+        "bounds_delta_mm": 5.044853423896711e-13,
+        "volume_delta_mm3": 1.7815158237510786e-09
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C12_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -4.522009244018008,
+            -9.624219048438016,
+            82.23323168905
+          ],
+          [
+            -4.022009044018003,
+            -9.124218848438018,
+            83.23323168905
+          ]
+        ],
+        "volume_mm3": 0.23927570639145987,
+        "bounds_delta_mm": 5.115907697472721e-13,
+        "volume_delta_mm3": 1.7815175723523424e-09
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C3_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            6.442013884027996,
+            -9.624219048438011,
+            55.783178108943
+          ],
+          [
+            7.442013884027996,
+            -9.124218848438012,
+            56.283178308943
+          ]
+        ],
+        "volume_mm3": 0.23927570639146126,
+        "bounds_delta_mm": 5.115907697472721e-13,
+        "volume_delta_mm3": 1.781516378862591e-09
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C4_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -3.8100077200150024,
+            -9.624219048438004,
+            26.341118404823
+          ],
+          [
+            -3.310007520014999,
+            -9.124218848438005,
+            27.341118404823
+          ]
+        ],
+        "volume_mm3": 0.23927570639146173,
+        "bounds_delta_mm": 4.938272013532696e-13,
+        "volume_delta_mm3": 1.7815159902845323e-09
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C5_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -3.810007720015003,
+            -9.624219048438006,
+            28.477122976832
+          ],
+          [
+            -3.3100075200149996,
+            -9.124218848438005,
+            29.477122976832
+          ]
+        ],
+        "volume_mm3": 0.23927570639146165,
+        "bounds_delta_mm": 4.938272013532696e-13,
+        "volume_delta_mm3": 1.781516156817986e-09
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C6_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            8.627785115569996,
+            -9.624219048438011,
+            53.113173168932995
+          ],
+          [
+            9.627785115569996,
+            -9.124218848438012,
+            53.613173368933
+          ]
+        ],
+        "volume_mm3": 0.2392757063914616,
+        "bounds_delta_mm": 5.115907697472721e-13,
+        "volume_delta_mm3": 1.7815161290624104e-09
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C9_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            3.9500076200149983,
+            -9.624219048438004,
+            25.523117288821
+          ],
+          [
+            4.950007620014998,
+            -9.124218848438005,
+            26.023117488821004
+          ]
+        ],
+        "volume_mm3": 0.23927570639146117,
+        "bounds_delta_mm": 4.938272013532696e-13,
+        "volume_delta_mm3": 1.781516517640469e-09
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C11_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            8.828016156032996,
+            -9.624219048438007,
+            34.351133644853995
+          ],
+          [
+            9.328016356032999,
+            -9.124218848438007,
+            35.351133644854
+          ]
+        ],
+        "volume_mm3": 0.23927570639146037,
+        "bounds_delta_mm": 5.044853423896711e-13,
+        "volume_delta_mm3": 1.7815169617296789e-09
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C13_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -6.48001280002501,
+            -9.624219048438016,
+            82.233229149045
+          ],
+          [
+            -5.980012600025005,
+            -9.124218848438018,
+            83.233229149045
+          ]
+        ],
+        "volume_mm3": 0.23927570639146004,
+        "bounds_delta_mm": 5.115907697472721e-13,
+        "volume_delta_mm3": 1.7815173780633131e-09
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C14_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -2.5640056880110094,
+            -9.624219048438016,
+            82.233229149045
+          ],
+          [
+            -2.064005488011006,
+            -9.124218848438018,
+            83.233229149045
+          ]
+        ],
+        "volume_mm3": 0.23927570639146042,
+        "bounds_delta_mm": 5.115907697472721e-13,
+        "volume_delta_mm3": 1.7815171282631326e-09
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C1_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            14.808031496059996,
+            -9.624219048438011,
+            49.019165040916995
+          ],
+          [
+            15.808031496059996,
+            -9.124218848438012,
+            49.519165240917
+          ]
+        ],
+        "volume_mm3": 0.2392757063915418,
+        "bounds_delta_mm": 3.007372129104624e-12,
+        "volume_delta_mm3": 1.781435721159852e-09
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C17_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            1.2800025400049957,
+            -9.624219048438011,
+            55.961179264944995
+          ],
+          [
+            2.2800025400049955,
+            -9.124218848438012,
+            56.461179464945
+          ]
+        ],
+        "volume_mm3": 0.23927570639146345,
+        "bounds_delta_mm": 5.115907697472721e-13,
+        "volume_delta_mm3": 1.7815142971944198e-09
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C15_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            12.494025988049993,
+            -9.624219048438016,
+            78.389223321033
+          ],
+          [
+            13.494025988049993,
+            -9.124218848438018,
+            78.88922352103299
+          ]
+        ],
+        "volume_mm3": 0.2392757063913236,
+        "bounds_delta_mm": 2.0055068716828828e-12,
+        "volume_delta_mm3": 1.7816539632509176e-09
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/C16_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            12.494025908049993,
+            -9.624219048438016,
+            79.991227525042
+          ],
+          [
+            13.494025908049993,
+            -9.124218848438018,
+            80.491227725042
+          ]
+        ],
+        "volume_mm3": 0.23927570639132376,
+        "bounds_delta_mm": 2.0055068716828828e-12,
+        "volume_delta_mm3": 1.7816539910064932e-09
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/U6_0",
+        "solids": 13,
+        "shells": 13,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -1.1780011160020065,
+            -9.624218948438017,
+            80.131252925094
+          ],
+          [
+            0.8219990839979937,
+            -8.603218848439017,
+            82.131253125093
+          ]
+        ],
+        "volume_mm3": 4.013286201459069,
+        "bounds_delta_mm": 5.115907697472721e-13,
+        "volume_delta_mm3": 4.440892098500626e-15
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R1_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            11.604023368039996,
+            -9.624218948438012,
+            53.112173168933
+          ],
+          [
+            12.604023368039996,
+            -9.264218948438012,
+            53.613173268933
+          ]
+        ],
+        "volume_mm3": 0.28778168292081724,
+        "bounds_delta_mm": 7.005951374594588e-12,
+        "volume_delta_mm3": 2.897126982759346e-13
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R3_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -1.7460020320040006,
+            -9.624218948438003,
+            14.486094936776999
+          ],
+          [
+            -0.7460020320040005,
+            -9.264218948437668,
+            14.987095036777
+          ]
+        ],
+        "volume_mm3": 0.28778168292052764,
+        "bounds_delta_mm": 4.956035581926699e-13,
+        "volume_delta_mm3": 7.771561172376096e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R4_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -3.882006604013001,
+            -9.624218948438003,
+            14.486094936776999
+          ],
+          [
+            -2.882006604013001,
+            -9.264218948437668,
+            14.987095036777
+          ]
+        ],
+        "volume_mm3": 0.28778168292052747,
+        "bounds_delta_mm": 4.956035581926699e-13,
+        "volume_delta_mm3": 4.996003610813204e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R7_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -12.532024384049002,
+            -9.624218948438005,
+            29.011123484833
+          ],
+          [
+            -12.031024284049002,
+            -9.264218948437671,
+            30.011123484833
+          ]
+        ],
+        "volume_mm3": 0.28778168292052736,
+        "bounds_delta_mm": 4.973799150320701e-13,
+        "volume_delta_mm3": 5.551115123125783e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R8_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -12.888026416053002,
+            -9.624218948438005,
+            26.519119420825
+          ],
+          [
+            -12.387026316053003,
+            -9.26421894843767,
+            27.519119420825
+          ]
+        ],
+        "volume_mm3": 0.2877816829205271,
+        "bounds_delta_mm": 4.938272013532696e-13,
+        "volume_delta_mm3": 4.996003610813204e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R9_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            6.336012192023995,
+            -9.624218948438012,
+            53.397173776934
+          ],
+          [
+            6.837012292023996,
+            -9.264218948437678,
+            54.397173776934
+          ]
+        ],
+        "volume_mm3": 0.287781682920527,
+        "bounds_delta_mm": 5.115907697472721e-13,
+        "volume_delta_mm3": 5.551115123125783e-17
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R10_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            6.976012192023997,
+            -9.62421894843801,
+            43.856153356892996
+          ],
+          [
+            7.976012192023997,
+            -9.264218948437675,
+            44.357153456892995
+          ]
+        ],
+        "volume_mm3": 0.2877816829205269,
+        "bounds_delta_mm": 5.044853423896711e-13,
+        "volume_delta_mm3": 6.661338147750939e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R11_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            9.290017780035997,
+            -9.62421894843801,
+            43.857153456892995
+          ],
+          [
+            10.290017780029997,
+            -9.264218948437009,
+            44.358153556893
+          ]
+        ],
+        "volume_mm3": 0.28778168291891204,
+        "bounds_delta_mm": 6.0040861171728466e-12,
+        "volume_delta_mm3": 1.6154855231320653e-12
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R12_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            3.132006604012998,
+            -9.624218948438006,
+            30.791128564844
+          ],
+          [
+            3.6330067040129976,
+            -9.264218948437671,
+            31.791128564844
+          ]
+        ],
+        "volume_mm3": 0.28778168292052697,
+        "bounds_delta_mm": 4.973799150320701e-13,
+        "volume_delta_mm3": 5.551115123125783e-17
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R16_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -1.5680035560070062,
+            -9.624218948438017,
+            78.388220921029
+          ],
+          [
+            -0.5680035560070061,
+            -9.26421894843768,
+            78.889221021029
+          ]
+        ],
+        "volume_mm3": 0.2877816829205254,
+        "bounds_delta_mm": 5.115907697472721e-13,
+        "volume_delta_mm3": 2.275957200481571e-15
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R17_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            2.3480035560069936,
+            -9.624218948438017,
+            78.389221021029
+          ],
+          [
+            3.3480035560069936,
+            -9.26421894843768,
+            78.89022112102899
+          ]
+        ],
+        "volume_mm3": 0.2877816829205249,
+        "bounds_delta_mm": 5.258016244624741e-13,
+        "volume_delta_mm3": 2.609024107869118e-15
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R5_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            2.5260071120139993,
+            -9.624218948438003,
+            14.487095036777
+          ],
+          [
+            3.5260071120139993,
+            -9.264218948437668,
+            14.988095136777
+          ]
+        ],
+        "volume_mm3": 0.2877816829205272,
+        "bounds_delta_mm": 4.938272013532696e-13,
+        "volume_delta_mm3": 4.440892098500626e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R6_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            0.3900025400049993,
+            -9.624218948438003,
+            14.486094936776999
+          ],
+          [
+            1.3900025400049993,
+            -9.264218948437668,
+            14.987095036777
+          ]
+        ],
+        "volume_mm3": 0.28778168292052736,
+        "bounds_delta_mm": 4.956035581926699e-13,
+        "volume_delta_mm3": 4.996003610813204e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R2_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -5.484010668021003,
+            -9.624218948438006,
+            31.930128464844
+          ],
+          [
+            -4.484010668021003,
+            -9.264218948437671,
+            32.431128564844
+          ]
+        ],
+        "volume_mm3": 0.28778168292052797,
+        "bounds_delta_mm": 4.973799150320701e-13,
+        "volume_delta_mm3": 7.771561172376096e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R13_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            8.400017780035999,
+            -9.624218948438006,
+            25.87911688082
+          ],
+          [
+            9.400017780035999,
+            -9.264218948437671,
+            26.380116980820002
+          ]
+        ],
+        "volume_mm3": 0.28778168292052697,
+        "bounds_delta_mm": 4.938272013532696e-13,
+        "volume_delta_mm3": 5.551115123125783e-17
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R14_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            6.086012192023997,
+            -9.624218948438008,
+            40.653147868881994
+          ],
+          [
+            7.086012192023997,
+            -9.264218948437675,
+            41.154147968882
+          ]
+        ],
+        "volume_mm3": 0.28778168292052697,
+        "bounds_delta_mm": 5.044853423896711e-13,
+        "volume_delta_mm3": 6.106226635438361e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R15_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            8.827016156032997,
+            -9.62421894843801,
+            40.937148376882995
+          ],
+          [
+            9.328016256032997,
+            -9.264218948437675,
+            41.937148376882995
+          ]
+        ],
+        "volume_mm3": 0.2877816829205274,
+        "bounds_delta_mm": 5.044853423896711e-13,
+        "volume_delta_mm3": 6.661338147750939e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R20_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -7.976014732029004,
+            -9.624218948438008,
+            45.636155896899
+          ],
+          [
+            -6.976014732029004,
+            -9.264218948437675,
+            46.137155996899
+          ]
+        ],
+        "volume_mm3": 0.28778168292052864,
+        "bounds_delta_mm": 4.973799150320701e-13,
+        "volume_delta_mm3": 1.1102230246251565e-15
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R21_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            14.274028448049997,
+            -9.62421894843801,
+            42.432150308886996
+          ],
+          [
+            15.274028448049997,
+            -9.26421894843801,
+            42.933150408886995
+          ]
+        ],
+        "volume_mm3": 0.2877816829208152,
+        "bounds_delta_mm": 7.007727731433988e-12,
+        "volume_delta_mm3": 2.877142968316093e-13
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R22_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -3.5260071120140046,
+            -9.624218948438012,
+            54.359175300937
+          ],
+          [
+            -2.5260071120140046,
+            -9.264218948437676,
+            54.860175400936996
+          ]
+        ],
+        "volume_mm3": 0.2877816829205288,
+        "bounds_delta_mm": 5.115907697472721e-13,
+        "volume_delta_mm3": 1.27675647831893e-15
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R23_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -4.523009244018004,
+            -9.62421894843801,
+            48.947163616914
+          ],
+          [
+            -4.0220091440180035,
+            -9.264218948437675,
+            49.947163616914
+          ]
+        ],
+        "volume_mm3": 0.28778168292052714,
+        "bounds_delta_mm": 4.973799150320701e-13,
+        "volume_delta_mm3": 2.220446049250313e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R24_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -7.976014732029004,
+            -9.62421894843801,
+            47.95016148491
+          ],
+          [
+            -6.976014732029004,
+            -9.264218948437675,
+            48.45116158491
+          ]
+        ],
+        "volume_mm3": 0.287781682920529,
+        "bounds_delta_mm": 4.973799150320701e-13,
+        "volume_delta_mm3": 1.3877787807814457e-15
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R18_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -2.1020040640080047,
+            -9.624218948438012,
+            55.960179264945
+          ],
+          [
+            -1.1020040640080042,
+            -9.264218948437678,
+            56.461179364945
+          ]
+        ],
+        "volume_mm3": 0.28778168292052925,
+        "bounds_delta_mm": 5.115907697472721e-13,
+        "volume_delta_mm3": 1.6653345369377348e-15
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/R19_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -5.484010668021003,
+            -9.624218948438008,
+            40.653147868881994
+          ],
+          [
+            -4.484010668021003,
+            -9.264218948437675,
+            41.154147968882
+          ]
+        ],
+        "volume_mm3": 0.28778168292052747,
+        "bounds_delta_mm": 5.044853423896711e-13,
+        "volume_delta_mm3": 1.6653345369377348e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/FPC1_0",
+        "solids": 21,
+        "shells": 21,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -16.265024130048005,
+            -9.62421904843801,
+            42.720163362913
+          ],
+          [
+            -9.865024130049003,
+            -7.614218848438008,
+            55.820163362913
+          ]
+        ],
+        "volume_mm3": 92.29599868803159,
+        "bounds_delta_mm": 4.973799150320701e-13,
+        "volume_delta_mm3": 6.679101716144942e-12
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/U1_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            10.5050214900345,
+            -9.62421894918301,
+            44.963158028902996
+          ],
+          [
+            12.605021690039997,
+            -9.04421894918301,
+            46.563158028903
+          ]
+        ],
+        "volume_mm3": 1.3832298780113987,
+        "bounds_delta_mm": 8.86224427176785e-12,
+        "volume_delta_mm3": 8.713030297258229e-13
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/LED1_0",
+        "solids": 3,
+        "shells": 3,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            6.076012192023996,
+            -9.62421894866101,
+            42.07715081688799
+          ],
+          [
+            7.096012192023997,
+            -9.214218948660895,
+            42.587151016888
+          ]
+        ],
+        "volume_mm3": 0.17834970988216453,
+        "bounds_delta_mm": 5.044853423896711e-13,
+        "volume_delta_mm3": 3.3306690738754696e-16
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/U8_0",
+        "solids": 14,
+        "shells": 14,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            11.010025400044103,
+            -9.62421898272101,
+            39.503147868881996
+          ],
+          [
+            13.91002540005,
+            -8.61721888272101,
+            42.303147868882
+          ]
+        ],
+        "volume_mm3": 3.5960247640246488,
+        "bounds_delta_mm": 6.8975936073911726e-12,
+        "volume_delta_mm3": 7.638334409421077e-14
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/U9_0",
+        "solids": 14,
+        "shells": 14,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -1.4000000000000017,
+            -9.624218982721006,
+            28.417125516838002
+          ],
+          [
+            1.399999999999998,
+            -8.617218882721007,
+            31.317125516838
+          ]
+        ],
+        "volume_mm3": 3.5960247640245693,
+        "bounds_delta_mm": 4.973799150320701e-13,
+        "volume_delta_mm3": 1.7763568394002505e-15
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/U2_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -15.090017780035007,
+            -9.624218949180017,
+            58.176199176985996
+          ],
+          [
+            16.309982219959995,
+            -6.304218849180011,
+            76.178199176984
+          ]
+        ],
+        "volume_mm3": 1359.4243346416881,
+        "bounds_delta_mm": 3.0055957722652238e-12,
+        "volume_delta_mm3": 3.979039320256561e-11
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/USBC1_0",
+        "solids": 14,
+        "shells": 14,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -4.470000099999002,
+            -10.474231634881003,
+            4.881085258003
+          ],
+          [
+            4.470000099998001,
+            -6.373231534882,
+            12.781085258003
+          ]
+        ],
+        "volume_mm3": 125.85778177677281,
+        "bounds_delta_mm": 4.938272013532696e-13,
+        "volume_delta_mm3": 1.2456030162866227e-07
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/L1_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            10.748021336039997,
+            -9.62421906147601,
+            48.647166056919
+          ],
+          [
+            12.748021336039997,
+            -8.67421886147601,
+            50.247166256919
+          ]
+        ],
+        "volume_mm3": 2.9300479730417908,
+        "bounds_delta_mm": 3.0038194154258235e-12,
+        "volume_delta_mm3": 2.5983659668327164e-12
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/U3_0",
+        "solids": 29,
+        "shells": 29,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -10.304025948031002,
+            -9.624218907616005,
+            25.380109982827
+          ],
+          [
+            -5.304005548031002,
+            -8.697920207617004,
+            30.380130382827
+          ]
+        ],
+        "volume_mm3": 22.564104710795707,
+        "bounds_delta_mm": 4.938272013532696e-13,
+        "volume_delta_mm3": 0.0
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/SW2_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -3.1830010112330034,
+            -9.624218948662008,
+            32.665139232865
+          ],
+          [
+            2.826999088765997,
+            -1.6142189486610063,
+            41.665139232864995
+          ]
+        ],
+        "volume_mm3": 166.99039665285372,
+        "bounds_delta_mm": 5.044853423896711e-13,
+        "volume_delta_mm3": 2.2168933355715126e-12
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/SW3_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -3.1830010112330043,
+            -9.624218948662012,
+            44.057163616913996
+          ],
+          [
+            2.826999088765996,
+            -1.6142189486610081,
+            53.057163616913996
+          ]
+        ],
+        "volume_mm3": 166.99039665285395,
+        "bounds_delta_mm": 4.973799150320701e-13,
+        "volume_delta_mm3": 2.5011104298755527e-12
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/SW1_0",
+        "solids": 6,
+        "shells": 6,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            3.5010083820165963,
+            -9.624219048438011,
+            45.171713030339994
+          ],
+          [
+            6.401008382016998,
+            -7.924218848439009,
+            49.656609631478
+          ]
+        ],
+        "volume_mm3": 13.744165480444686,
+        "bounds_delta_mm": 4.973799150320701e-13,
+        "volume_delta_mm3": 1.0092424673757705e-09
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/Populated_PCB/U7_0",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            11.001022352039993,
+            -9.624218948790018,
+            81.326227625042
+          ],
+          [
+            12.851022352040031,
+            -8.714218848790006,
+            84.076227625042
+          ]
+        ],
+        "volume_mm3": 3.658359619864028,
+        "bounds_delta_mm": 5.005773573429906e-12,
+        "volume_delta_mm3": 3.355982158836923e-12
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/PCB_Mounting_Hardware/PCB_M2x8_Screw_1",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -11.078,
+            -12.75,
+            20.92507674874
+          ],
+          [
+            -7.077999999999999,
+            -3.25,
+            24.92507674874
+          ]
+        ],
+        "volume_mm3": 43.98229715025676,
+        "bounds_delta_mm": 4.902744876744691e-13,
+        "volume_delta_mm3": 3.410605131648481e-13
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/PCB_Mounting_Hardware/PCB_M2_Nut_1",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            -11.078,
+            -6.604218948438,
+            20.61567567198137
+          ],
+          [
+            -7.078,
+            -5.004218948438,
+            25.234477825499624
+          ]
+        ],
+        "volume_mm3": 17.14370209113799,
+        "bounds_delta_mm": 6.288303211476887e-13,
+        "volume_delta_mm3": 1.7763568394002505e-14
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/PCB_Mounting_Hardware/PCB_M2x8_Screw_2",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            7.077999999999999,
+            -12.75,
+            20.92507674874
+          ],
+          [
+            11.078,
+            -3.25,
+            24.92507674874
+          ]
+        ],
+        "volume_mm3": 43.982297150256755,
+        "bounds_delta_mm": 4.902744876744691e-13,
+        "volume_delta_mm3": 3.481659405224491e-13
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/PCB_Mounting_Hardware/PCB_M2_Nut_2",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            7.078,
+            -6.604218948438,
+            20.61567567198137
+          ],
+          [
+            11.078,
+            -5.004218948438,
+            25.234477825499628
+          ]
+        ],
+        "volume_mm3": 17.143702091137985,
+        "bounds_delta_mm": 6.323830348264892e-13,
+        "volume_delta_mm3": 1.4210854715202004e-14
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/PCB_Mounting_Hardware/PCB_M2x8_Screw_3",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            6.366,
+            -12.75,
+            78.953076748741
+          ],
+          [
+            10.366,
+            -3.25,
+            82.953076748741
+          ]
+        ],
+        "volume_mm3": 43.98229715025676,
+        "bounds_delta_mm": 4.973799150320701e-13,
+        "volume_delta_mm3": 3.623767952376511e-13
+      },
+      {
+        "path": "MAICA_EVE_Magnet_Assembly/Rear_PCB/PCB_Mounting_Hardware/PCB_M2_Nut_3",
+        "solids": 1,
+        "shells": 1,
+        "valid": true,
+        "closed_shells": true,
+        "bounds_mm": [
+          [
+            6.366,
+            -6.604218948438,
+            78.64367567198137
+          ],
+          [
+            10.366,
+            -5.004218948438,
+            83.26247782549963
+          ]
+        ],
+        "volume_mm3": 17.143702091138042,
+        "bounds_delta_mm": 6.252776074688882e-13,
+        "volume_delta_mm3": 1.1723955140041653e-13
+      }
+    ]
+  },
+  "fit_coupons": {
+    "25p1": {
+      "single_watertight_solid": true,
+      "bounds_mm": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          29.700000762939453,
+          29.700000762939453,
+          5.050000190734863
+        ]
+      ]
+    },
+    "25p2": {
+      "single_watertight_solid": true,
+      "bounds_mm": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          29.700000762939453,
+          29.700000762939453,
+          5.050000190734863
+        ]
+      ]
+    },
+    "25p3": {
+      "single_watertight_solid": true,
+      "bounds_mm": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          29.700000762939453,
+          29.700000762939453,
+          5.050000190734863
+        ]
+      ]
+    }
+  },
+  "file_sha256": {
+    "MAICA_EVE_Magnet_Front.step": "fb702abca8facbaa631461defe82656758ae912ea72ecf7ca66f919c67e0d26c",
+    "MAICA_EVE_Magnet_Front_Print.stl": "02195c432b2fcf3aab1cfc1ce925c3176ad3db87fd08939026f45b30b236b4b5",
+    "MAICA_EVE_Magnet_Onshape_Assembly.step": "b0b010b398285b96ac2f038031dfb8beac0383c47fcf6dc710dbd62c71cd5d30",
+    "MAICA_EVE_Magnet_Fit_25p1_Print.stl": "2d71a4f81fae6eedec1a261cd1f2dc98580af2d1818c6192f664459a672c5b9d",
+    "MAICA_EVE_Magnet_Fit_25p2_Print.stl": "92d5691b5bb883e027b6dd4ebe428947fbd545a210faa52514436883dfd4e223",
+    "MAICA_EVE_Magnet_Fit_25p3_Print.stl": "73664d6055536e31d825cac91f1ebefb8e5373d169c69cf1f8c8e36890ba6a87",
+    "MAICA_EVE_Magnet_Preview.png": "b6b74cbd9eedff5deb0c04dd592c49fac09671024128796bc5b808ad3be29cbf",
+    "MAICA_EVE_Magnet_Readme.md": "4092b9df0b2af04563c6206308b534ea59da02a2ce799527a0d1d46e42c1ad5f"
+  }
+}

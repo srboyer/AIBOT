@@ -1,0 +1,54 @@
+{
+  "revision": "EVE shell with internal 1-inch by 3/16-inch magnet pocket",
+  "published_date": "2026-11-16",
+  "units": "mm",
+  "front": "print/MAICA_EVE_Magnet_Front_Print.stl",
+  "back": "print/MAICA_EVE_PCBFit_Back_Print.stl",
+  "pcb_reference": "3D_PCB1_1_2026-11-11.step",
+  "mounting_holes_reference": "Gerber_PCB1_1_2026-11-11 (1).zip",
+  "display_reference": "6178 1.28in Round TFT.step",
+  "physical_validation": "Not yet printed or tested for fit or holding strength",
+  "onshape_cloud_import_verified": false,
+  "step_archives": [
+    {
+      "path": "cad/MAICA_EVE_Magnet_Front.step.zip",
+      "archive_bytes": 16651557,
+      "archive_sha256": "7f6526254a7417bd54e5c2029df5a0be273d2ea852e2d344fa43fdd141e5f82a",
+      "member": "MAICA_EVE_Magnet_Front.step",
+      "member_bytes": 82404602,
+      "member_sha256": "fb702abca8facbaa631461defe82656758ae912ea72ecf7ca66f919c67e0d26c"
+    },
+    {
+      "path": "cad/MAICA_EVE_PCBFit_Back.step.zip",
+      "archive_bytes": 12208011,
+      "archive_sha256": "a943663e1f8de398b825adf0ca7219d84088564621f916e0ad88171ff7ee0f23",
+      "member": "MAICA_EVE_PCBFit_Back.step",
+      "member_bytes": 61615729,
+      "member_sha256": "4ee58c64503e8dbe4a6da41eff58a41477247a60e90fd3db1ee2f6273f6db0e9"
+    },
+    {
+      "path": "cad/MAICA_EVE_PCBFit_Upper_Button.step.zip",
+      "archive_bytes": 528444,
+      "archive_sha256": "59b116266c7d244ba9380d10228b42212c3f083c54fa8fedd21591ad9c982a52",
+      "member": "MAICA_EVE_PCBFit_Upper_Button.step",
+      "member_bytes": 2661470,
+      "member_sha256": "278bbad2fe5154c5906519bb4b44818b5b11641317811ee68dbb17dba13f1080"
+    },
+    {
+      "path": "cad/MAICA_EVE_PCBFit_Lower_Button.step.zip",
+      "archive_bytes": 526826,
+      "archive_sha256": "f80609866d577a19a5ce257fa0199571f00aa4fc701f298d7629fb0a96f1ab34",
+      "member": "MAICA_EVE_PCBFit_Lower_Button.step",
+      "member_bytes": 2651115,
+      "member_sha256": "0b0e0aedb801003d440c604de789143befa7104eea5887ca69c12af3c4396875"
+    },
+    {
+      "path": "cad/MAICA_EVE_Magnet_Onshape_Assembly.step.zip",
+      "archive_bytes": 49426574,
+      "archive_sha256": "71cac26ec4765253a664ec3f6e464639bcc9a9ba70e7d11d5c08f6ff32d8c27f",
+      "member": "MAICA_EVE_Magnet_Onshape_Assembly.step",
+      "member_bytes": 274725622,
+      "member_sha256": "b0b010b398285b96ac2f038031dfb8beac0383c47fcf6dc710dbd62c71cd5d30"
+    }
+  ]
+}

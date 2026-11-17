@@ -84,6 +84,63 @@ Get-PnpDevice | Where-Object FriendlyName -like "*Standard Serial over Bluetooth
 ```
 then pass the matching one directly: `--port COM<N>`.
 
+## Mac
+
+The desktop app in this folder runs on a Mac too: the same code, with a
+menu-bar icon instead of a tray icon. Everything matches Windows:
+- the watcher, split faces, low battery, rim colours and celebrations
+- Settings, the setup guide and Flash firmware
+- Start at login, Check for updates
+- Claude Code, Codex, the browser extension (Chrome, Edge, Brave,
+  Firefox), and the desktop apps (Claude, ChatGPT, Copilot, LM Studio,
+  Ollama, Perplexity)
+- double-tap to jump, and push-to-talk
+
+The desktop apps are read through Accessibility (`mac_ax.py`,
+`mac_backends.py`, the `mac_app` names in `maica_rules.json`) instead of
+UI Automation.
+
+**Getting it.** GitHub builds it on every push to `main`
+(`.github/workflows/mac.yml`). The run's page has `MAICA-mac-x86_64` for
+Intel Macs and `MAICA-mac-arm64` for Apple Silicon. On a Mac you can also
+build it yourself: install Python 3.11+ from python.org, then run
+`./build_mac.sh` (it explains its options at the top).
+
+**First run (the app is unsigned for now):**
+1. Open the disk image and drag MAICA into Applications.
+2. Open MAICA from Applications. macOS blocks it the first time: go to
+   System Settings > Privacy & Security, click Open Anyway, then open it
+   again. Run from the disk image or from Downloads, the setup guide asks
+   you to move it first, because Claude Code's hook and Start at login
+   remember where the app is.
+3. In the setup guide:
+   - Pair MAICA (System Settings > Bluetooth > Connect next to
+     "ClaudeStatusMatrix").
+   - Allow Bluetooth if macOS asks.
+   - Set up Claude Code. On a Mac the app itself is the hook:
+     `MAICA.app/Contents/MacOS/MAICA --claude-hook`.
+   - Load the browser extension.
+   - Turn MAICA on under Privacy & Security > Accessibility.
+
+**Checking a Mac:**
+- `/Applications/MAICA.app/Contents/MacOS/MAICA --self-test` loads every
+  part of the app.
+- The log is at `~/Library/Application Support/ClaudeStatusLight/watcher.log`
+  (menu > Open log).
+- From source: `python3 chat_watcher.py --debug` traces every app, and
+  `python3 mac_inspect_app.py Claude` dumps an app's accessibility tree, to
+  find a renamed Stop button.
+- If MAICA isn't found after pairing, `ls /dev/cu.*` should list
+  `/dev/cu.ClaudeStatusMatrix`.
+
+**Not yet tried on a real Mac:**
+- Whether macOS gives MAICA's Classic Bluetooth a serial port, and how
+  stable it stays.
+- The desktop apps' Stop-button labels.
+- Push-to-talk typing.
+- Signing/notarization, which needs an Apple Developer ID; `build_mac.sh`
+  is ready for one.
+
 ## Software architecture
 
 The system is split into a generic core (hardware + state machine) and
@@ -300,8 +357,7 @@ that.
 
 ## Known issues / caveats
 
-- Windows-only (pywinauto/UIA-based); Mac/Linux would need a full
-  platform-specific accessibility API rewrite.
+- Windows and Mac (see "Mac" above); Linux isn't supported.
 - BLE disconnect mid-session triggers the outer recovery loop and a
   ~5s reconnect/rescan.
 - ChatGPT and Copilot backends have no QUESTION state and no THINKING
@@ -326,7 +382,7 @@ that.
       expressions instead of 8x8 pixel art.
 - [ ] Packaging — turn into a proper installer/executable instead of
       "run a Python script."
-- [ ] Mac/Linux support (separate, larger effort).
+- [ ] Mac: try it on a real Mac (see "Mac" above), then sign and notarize.
 
 ## Full file list (in /mnt/user-data/outputs/)
 

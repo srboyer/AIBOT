@@ -10,8 +10,14 @@ Desktop/Web) is idle, analyzing, thinking, waiting on you, done, or out of token
 by watching the app's UI directly via Windows UI Automation (pywinauto), no
 API key or app-side integration required.
 
-All code lives under `Windows/` (Windows-only currently; `mac_inspect_app.py`
-is prep work for an eventual Mac port, not a working backend).
+All the desktop app's code lives under `Windows/`, which, despite its name,
+is the app for both Windows and Mac. Platform differences are `sys.platform`
+branches, and Mac-only modules are `mac_ax.py`, `mac_backends.py` and
+`mac_inspect_app.py`. Mac packaging is `build_mac.sh` plus
+`build_specs/MAICA_mac.spec`, built and tested on GitHub's Macs by
+`.github/workflows/mac.yml`. See the README's "Mac" section. Keep Mac
+imports lazy, so modules and tests still load on the other system: the test
+suites run on both.
 
 Read `Windows/README.md` for the full hardware write-up, protocol details,
 and known gotchas (accessibility-tree-stays-empty, BLE heartbeat tuning
